@@ -1,17 +1,32 @@
 #include <am.h>
 #include <riscv/riscv.h>
+#include <inttypes.h>
 #include <klib.h>
 
 static Context* (*user_handler)(Event, Context*) = NULL;
 
 Context* __am_irq_handle(Context *c) {
+	// printf("go in am_irq_handle\n");
+	// printf("call mepc: 0x%08" PRIxPTR "\n", c->mepc);
   if (user_handler) {
+	// printf("user_handler exist\n");
     Event ev = {0};
+	// printf("c->mcause: %d \n",c->mcause);
     switch (c->mcause) {
-      default: ev.event = EVENT_ERROR; break;
+		case 11: 
+			if(c->GPR1 == -1){
+				ev.event = EVENT_YIELD;
+				c->mepc += 4;
+			} else{
+				ev.event = EVENT_SYSCALL;
+				c->mepc +=4;
+			}
+			break;
+    	default: ev.event = EVENT_ERROR; break;
     }
 
     c = user_handler(ev, c);
+	// printf("return mepc: 0x%08" PRIxPTR "\n", c->mepc);
     assert(c != NULL);
   }
 
@@ -31,7 +46,11 @@ bool cte_init(Context*(*handler)(Event, Context*)) {
 }
 
 Context *kcontext(Area kstack, void (*entry)(void *), void *arg) {
-  return NULL;
+	Context* cp = (Context*)(kstack.end - sizeof(Context));	//移动栈指针留空间
+	cp->mepc = (uintptr_t)entry;
+	cp->mstatus = 0x1800;
+	cp->gpr[10] = (uintptr_t)(arg);
+	return cp;
 }
 
 void yield() {

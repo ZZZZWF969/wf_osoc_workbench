@@ -22,6 +22,19 @@
 #define Mr vaddr_read
 #define Mw vaddr_write
 
+vaddr_t* csr_regesiter(word_t idx){
+	if(idx == 0x300) return &(cpu.csr.mstatus);
+	if(idx == 0x305) return &(cpu.csr.mtvec);
+	if(idx == 0x341) return &(cpu.csr.mepc);
+	if(idx == 0x342) return &(cpu.csr.mcause);
+	panic("Unknown csr");
+}
+
+#define CSR(idx) *csr_regesiter(idx)
+#define ECALL(NO, dnpc) { dnpc = (isa_raise_intr(NO, s->pc)); \
+	IFDEF(CONFIG_ETRACE, printf("\necall at 0x%08x, mtvec: 0x%08x \n", cpu.csr.mepc, cpu.csr.mtvec);) \
+	}
+
 void itrace_inst(word_t pc, uint32_t inst);
 void ftrace_jal(uint32_t inst_addr, uint32_t func_addr, int rd);
 void ftrace_jalr(uint32_t inst_addr, uint32_t func_addr, int rd, int rs1, int imm);
@@ -118,7 +131,10 @@ static int decode_exec(Decode *s) {
   INSTPAT("0000001 ????? ????? 011 ????? 01100 11", mulhu  , R, R(rd) = (((int64_t)(word_t)src1 * (int64_t)(word_t)src2) >> 32););
   INSTPAT("0000001 ????? ????? 100 ????? 01100 11", div    , R, if(src2 == 0) R(rd) = -1; else R(rd) = (int32_t)src1 / (int32_t)src2;);
   INSTPAT("0000001 ????? ????? 101 ????? 01100 11", divu   , R, if(src2 == 0) R(rd) = -1; else R(rd) = ((uint32_t)src1 / (uint32_t)src2));
-
+  INSTPAT("??????? ????? ????? 001 ????? 11100 11", csrrw  , I, word_t t = CSR(imm); CSR(imm) = src1; R(rd) = t;);
+  INSTPAT("0000000 00000 00000 000 00000 11100 11", ecall  , I, ECALL(11, s->dnpc););
+  INSTPAT("??????? ????? ????? 010 ????? 11100 11", csrrs  , I, word_t t = CSR(imm); CSR(imm) = t | src1; R(rd) = t;);
+  INSTPAT("0011000 00010 00000 000 00000 11100 11", mret   , R, s->dnpc = cpu.csr.mepc);
 
   INSTPAT("0000000 00001 00000 000 00000 11100 11", ebreak , N, NEMUTRAP(s->pc, R(10))); // R(10) is $a0
   INSTPAT("??????? ????? ????? ??? ????? ????? ??", inv    , N, INV(s->pc));

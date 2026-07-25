@@ -31,10 +31,10 @@ void itrace_display(){
         if((i+1)%IRING_BUF_SIZE == end)     printf("--->");
         else    printf("    ");
         printf("0x%08x    ", iring_buffer[i].pc);
-//		char buffer[32];
+		char buffer[32];
 		#ifdef CONFIG_ITRACE
         disassemble(buffer, sizeof(buffer), iring_buffer[i].pc, (uint8_t*)&iring_buffer[i].inst, 4);
         #endif
-//		puts(buffer);
+		puts(buffer);
     }
 }
