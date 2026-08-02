@@ -1,12 +1,12 @@
 `include "RV32E.vh"
 
-module ysyx_25060166CPU(
+module RV32E_CPU(
     input                   clk,
     input                   rst,
-	input   [`ysyx_25060166_WIDTH-1:0]	INST,
-    output  [`ysyx_25060166_WIDTH-1:0]  RAM_WDATA,
-    output  [`ysyx_25060166_WIDTH-1:0]  RAM_ADDR,
-	output	[`ysyx_25060166_WIDTH-1:0]	PC,
+	input   [`RV32E_WIDTH-1:0]	INST,
+    output  [`RV32E_WIDTH-1:0]  RAM_WDATA,
+    output  [`RV32E_WIDTH-1:0]  RAM_ADDR,
+	output	[`RV32E_WIDTH-1:0]	PC,
     output                  RAM_WEN,
 	output					RAM_REN
 );
@@ -22,17 +22,17 @@ module ysyx_25060166CPU(
 	wire			mem_write_byte;
 	wire	[15:0]	mem_half_data;
 	wire	[7:0]	mem_byte_data;
-	wire	[`ysyx_25060166_WIDTH-1:0]	imm_num;
-	wire    [`ysyx_25060166_WIDTH-1:0]  programe_counter;
-	wire    [`ysyx_25060166_WIDTH-1:0]  reg_write_data;
-	wire	[`ysyx_25060166_WIDTH-1:0]	mem_address;
-	wire	[`ysyx_25060166_WIDTH-1:0]	RAM_RDATA;
+	wire	[`RV32E_WIDTH-1:0]	imm_num;
+	wire    [`RV32E_WIDTH-1:0]  programe_counter;
+	wire    [`RV32E_WIDTH-1:0]  reg_write_data;
+	wire	[`RV32E_WIDTH-1:0]	mem_address;
+	wire	[`RV32E_WIDTH-1:0]	RAM_RDATA;
 	
 	assign PC = programe_counter;
 	assign RAM_ADDR = mem_address;
 	assign jump_sig = unconditional_jump | conditional_jump ;
 
-    ysyx_25060166_IFU IFU(
+    RV32E_IFU IFU(
         .clk        (clk),
         .rst        (rst),
         .jump_sig   (jump_sig),
@@ -40,11 +40,11 @@ module ysyx_25060166CPU(
         .pc_count   (programe_counter)
     );
 
-	wire [5:0]  alu_op;
-	wire [`ysyx_25060166_WIDTH-1:0] read_data_0;	//read form register
-	wire [`ysyx_25060166_WIDTH-1:0] read_data_1;
+	wire [5:0]  exu_op;
+	wire [`RV32E_WIDTH-1:0] read_data_0;	//read form register
+	wire [`RV32E_WIDTH-1:0] read_data_1;
 
-    ysyx_25060166_IDU IDU(
+    RV32E_IDU IDU(
         .inst		(INST),
         .mem_wen	(RAM_WEN),
 		.mem_ren	(RAM_REN),
@@ -54,11 +54,11 @@ module ysyx_25060166CPU(
         .reg_wen    (reg_wen),
         .rwrd		(reg_rd),
 		.imm		(imm_num),
-        .ALU_OP     (alu_op)
+        .EXU_OP     (exu_op)
         //more IO ports
     );
 
-    ysyx_25060166_REG_ARRAY REG_ARR(
+    RV32E_REG_ARRAY REG_ARR(
         .clk		(clk),
         .rst		(rst),
         .wen		(reg_wen),
@@ -71,13 +71,13 @@ module ysyx_25060166CPU(
     );
 
     //temporary
-    ysyx_25060166_ALU ALU(
+    RV32E_EXU EXU(
         .reg_data_0		(read_data_0),
         .reg_data_1		(read_data_1),	
 		.pc				(programe_counter),
 		.imm			(imm_num),
 		.mem_rdata		(RAM_RDATA),
-        .op				(alu_op),
+        .op				(exu_op),
 		.con_jump		(conditional_jump),
 		.half_write		(mem_write_half),
 		.byte_write		(mem_write_byte),
@@ -89,7 +89,7 @@ module ysyx_25060166CPU(
     );
     //temporary
 
-	ysyx_25060166_MEM MEM_IF(
+	RV32E_MEM MEM_IF(
 		.clk		(clk),
 		.write_en	(RAM_WEN),
 		.read_en	(RAM_REN),

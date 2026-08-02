@@ -13,7 +13,7 @@ LDSCRIPTS += $(AM_HOME)/scripts/linker.ld
 LDFLAGS   += --defsym=_pmem_start=0x80000000 --defsym=_entry_offset=0x0
 LDFLAGS   += --gc-sections -e _start
 
-#NPC_FLAGS += -b
+NPC_FLAGS += -b
 NPC_FLAGS += --diff=$(NEMU_HOME)/build/riscv32-nemu-interpreter-so
 
 MAINARGS_MAX_LEN = 64
@@ -29,5 +29,5 @@ image: image-dep
 	@$(OBJCOPY) -S --set-section-flags .bss=alloc,contents -O binary $(IMAGE).elf $(IMAGE).bin
 
 run: insert-arg
-	@$(MAKE) -C $(NPC_HOME)/ysyx_25060166 run NPC_FLAGS="$(NPC_FLAGS)" IMG=$(IMAGE).bin
+	@$(MAKE) -C $(NPC_HOME)/RV32E run NPC_FLAGS="$(NPC_FLAGS)" IMG=$(IMAGE).bin
 .PHONY: insert-arg

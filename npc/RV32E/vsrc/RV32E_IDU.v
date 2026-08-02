@@ -1,7 +1,7 @@
 `include "RV32E.vh"
 
-module ysyx_25060166_IDU(
-	input	[`ysyx_25060166_WIDTH-1:0]	inst,
+module RV32E_IDU(
+	input	[`RV32E_WIDTH-1:0]	inst,
 	output	reg				mem_wen,
 	output	reg				mem_ren,
 	output	reg				uncon_jump,
@@ -9,16 +9,16 @@ module ysyx_25060166_IDU(
 	output			[4:0]	rs2_addr,
 	output	reg				reg_wen,
 	output			[4:0]	rwrd,
-	output	reg	[`ysyx_25060166_WIDTH-1:0]	imm,
-	output	reg [5:0]		ALU_OP			//magic number
+	output	reg	[`RV32E_WIDTH-1:0]	imm,
+	output	reg [5:0]		EXU_OP			//magic number
 );
 
-	wire [`ysyx_25060166_WIDTH-1:0]   immI;
-	wire [`ysyx_25060166_WIDTH-1:0]   immJ;
-	wire [`ysyx_25060166_WIDTH-1:0]   immU;
-	wire [`ysyx_25060166_WIDTH-1:0]   immS;
-//	wire [`ysyx_25060166_WIDTH-1:0]   immR;
-	wire [`ysyx_25060166_WIDTH-1:0]   immB;
+	wire [`RV32E_WIDTH-1:0]   immI;
+	wire [`RV32E_WIDTH-1:0]   immJ;
+	wire [`RV32E_WIDTH-1:0]   immU;
+	wire [`RV32E_WIDTH-1:0]   immS;
+//	wire [`RV32E_WIDTH-1:0]   immR;
+	wire [`RV32E_WIDTH-1:0]   immB;
     wire [2:0]          funct3;
 	wire [6:0]			funct7;
     wire [6:0]          opcode;
@@ -42,7 +42,7 @@ module ysyx_25060166_IDU(
 	always @(*) begin
 
 		mem_wen = 0; mem_ren = 0; reg_wen = 0;			//default assignment to avoide latch
-		ALU_OP = `ALU_DEFAULT; imm = 0;	uncon_jump = 0; 
+		EXU_OP = `EXU_DEFAULT; imm = 0;	uncon_jump = 0; 
 
 		if(inst == 32'h00100073) begin
 			sim_finish();
@@ -53,35 +53,35 @@ module ysyx_25060166_IDU(
 			imm = immI;	reg_wen = 1;
 			case (funct3)
 				3'b000: begin
-					ALU_OP = `ADDI; 
+					EXU_OP = `ADDI; 
 				end 
 				3'b011: begin
-					ALU_OP = `SLTIU;
+					EXU_OP = `SLTIU;
 				end
 				3'b001: begin
 					if(immI[5] == 0) begin
-						ALU_OP = `SLLI;
+						EXU_OP = `SLLI;
 					end else begin
 						$display("invalid slli, NPC choices to skip it");
 						reg_wen = 0;
 					end
 				end
 				3'b100: begin
-					ALU_OP = `XORI;
+					EXU_OP = `XORI;
 				end
 				3'b101: begin
 					if(immI[5] == 0) begin
-						reg_wen = 1; ALU_OP = funct7[5]? `SRAI : `SRLI;
+						reg_wen = 1; EXU_OP = funct7[5]? `SRAI : `SRLI;
 					end else begin
 						$display("invalid srli/srai, NPC choices to skip it");
 						reg_wen = 0;
 					end
 				end
 				3'b110: begin
-					ALU_OP = `ORI;
+					EXU_OP = `ORI;
 				end
 				3'b111: begin
-					ALU_OP = `ANDI;
+					EXU_OP = `ANDI;
 				end
 				default: begin end
 			endcase
@@ -90,7 +90,7 @@ module ysyx_25060166_IDU(
 			imm = immI; reg_wen = 1;
 			case (funct3)
 				3'b000: begin
-					ALU_OP = `JALR; uncon_jump = 1;
+					EXU_OP = `JALR; uncon_jump = 1;
 				end 
 				default: begin end
 			endcase
@@ -99,19 +99,19 @@ module ysyx_25060166_IDU(
 			imm = immI;
 			case (funct3)
 				3'b000: begin
-					mem_ren = 1; ALU_OP = `LB; reg_wen = 1;
+					mem_ren = 1; EXU_OP = `LB; reg_wen = 1;
 				end
 				3'b010: begin
-					mem_ren = 1; ALU_OP = `LW; reg_wen = 1;
+					mem_ren = 1; EXU_OP = `LW; reg_wen = 1;
 				end
 				3'b100: begin
-					reg_wen = 1; ALU_OP = `LBU; mem_ren = 1;
+					reg_wen = 1; EXU_OP = `LBU; mem_ren = 1;
 				end
 				3'b001: begin
-					ALU_OP = `LH; reg_wen = 1; mem_ren = 1;
+					EXU_OP = `LH; reg_wen = 1; mem_ren = 1;
 				end
 				3'b101: begin
-					ALU_OP = `LHU; reg_wen = 1; mem_ren = 1;
+					EXU_OP = `LHU; reg_wen = 1; mem_ren = 1;
 				end
 				default: begin end
 			endcase
@@ -120,43 +120,43 @@ module ysyx_25060166_IDU(
 		//R_TYPE
 		if(opcode == 7'b0110011) begin
 			if(funct7 == 7'b0100000 && funct3 == 3'b000) begin
-				ALU_OP = `SUB; reg_wen = 1;
+				EXU_OP = `SUB; reg_wen = 1;
 			end else if(funct7 == 7'b0100000 && funct3 == 3'b101) begin
-				ALU_OP = `SRA; reg_wen = 1;
+				EXU_OP = `SRA; reg_wen = 1;
 			end
 		end
 		if(opcode == 7'b0110011) begin
 			if(funct7 == 7'b000_0000 && funct3 == 3'b000) begin
-				ALU_OP = `ADD; reg_wen = 1;
+				EXU_OP = `ADD; reg_wen = 1;
 			end else if(funct7 == 7'b0000000 && funct3 == 3'b110) begin
-				ALU_OP = `OR; reg_wen = 1;
+				EXU_OP = `OR; reg_wen = 1;
 			end else if(funct7 == 7'b0000000 && funct3 == 3'b100) begin
-				ALU_OP = `XOR; reg_wen = 1;
+				EXU_OP = `XOR; reg_wen = 1;
 			end else if(funct7 == 7'b0000000 && funct3 == 3'b011) begin
-				reg_wen = 1; ALU_OP = `SLTU;
+				reg_wen = 1; EXU_OP = `SLTU;
 			end else if(funct7 == 7'b0000000 && funct3 == 3'b001) begin
-				reg_wen = 1; ALU_OP = `SLL;
+				reg_wen = 1; EXU_OP = `SLL;
 			end else if(funct7 == 7'b0000000 && funct3 == 3'b101) begin
-				reg_wen = 1; ALU_OP = `SRL;
+				reg_wen = 1; EXU_OP = `SRL;
 			end else if(funct7 == 7'b0000000 && funct3 == 3'b111) begin
-				ALU_OP = `AND; reg_wen = 1;
+				EXU_OP = `AND; reg_wen = 1;
 			end else if(funct7 == 7'b0000000 && funct3 == 3'b010) begin
-				reg_wen = 1; ALU_OP = `SLT;
+				reg_wen = 1; EXU_OP = `SLT;
 			end
 		end
 
 		//U_TYPE
 		if(opcode == 7'b0010111) begin
-			imm = immU; ALU_OP = `AUIPC; reg_wen = 1;
+			imm = immU; EXU_OP = `AUIPC; reg_wen = 1;
 		end
 		if(opcode == 7'b0110111) begin
-			imm = immU; reg_wen = 1; ALU_OP = `LUI;
+			imm = immU; reg_wen = 1; EXU_OP = `LUI;
 		end
 
 		//J_TYPE
 		if(opcode == 7'b1101111) begin
 			reg_wen = 1;
-			imm = immJ; uncon_jump = 1; ALU_OP = `JAL;
+			imm = immJ; uncon_jump = 1; EXU_OP = `JAL;
 		end
 
 		//S_TYPE
@@ -164,13 +164,13 @@ module ysyx_25060166_IDU(
 			imm = immS;
 			case (funct3)
 				3'b010: begin
-					ALU_OP = `SW; mem_wen = 1;
+					EXU_OP = `SW; mem_wen = 1;
 				end 
 				3'b001: begin
-					mem_wen = 1; ALU_OP = `SH;
+					mem_wen = 1; EXU_OP = `SH;
 				end
 				3'b000: begin
-					mem_wen = 1; ALU_OP = `SB;
+					mem_wen = 1; EXU_OP = `SB;
 				end
 				default: begin end
 			endcase
@@ -181,22 +181,22 @@ module ysyx_25060166_IDU(
 			imm = immB;
 			case (funct3)
 				3'b000: begin
-					ALU_OP = `BEQ;
+					EXU_OP = `BEQ;
 				end
 				3'b001: begin
-					ALU_OP = `BNE;
+					EXU_OP = `BNE;
 				end 
 				3'b100: begin
-					ALU_OP = `BLT;
+					EXU_OP = `BLT;
 				end
 				3'b101: begin
-					ALU_OP = `BGE;
+					EXU_OP = `BGE;
 				end
 				3'b110: begin
-					ALU_OP = `BLTU;
+					EXU_OP = `BLTU;
 				end
 				3'b111: begin
-					ALU_OP = `BGEU;
+					EXU_OP = `BGEU;
 				end
 				default begin end
 			endcase

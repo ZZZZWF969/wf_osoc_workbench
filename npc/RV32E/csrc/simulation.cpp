@@ -8,7 +8,7 @@ int is_statu_bad();
 uint64_t get_time();
 
 VerilatedVcdC* tfp = nullptr;
-Vysyx_25060166CPU* top = nullptr;
+VRV32E_CPU* top = nullptr;
 
 uint64_t wave_count = 0;
 
@@ -29,7 +29,7 @@ int main(int argc, char** argv){
 	Verilated::commandArgs(argc, argv);
 	Verilated::traceEverOn(true);
 	tfp = new VerilatedVcdC;
-	top = new Vysyx_25060166CPU;
+	top = new VRV32E_CPU;
 	top->trace(tfp, 99);
 	tfp->open("waveform.vcd");
 

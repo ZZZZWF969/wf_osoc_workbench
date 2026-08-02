@@ -1,16 +1,16 @@
 `include "RV32E.vh"
 
-module ysyx_25060166_MEM(
+module RV32E_MEM(
 	input				clk,
 	input				write_en,
 	input				read_en,
 	input				half_write,
 	input				byte_write,
-	input		[`ysyx_25060166_WIDTH-1:0]	address,
-	input		[`ysyx_25060166_WIDTH-1:0]	write_data,
+	input		[`RV32E_WIDTH-1:0]	address,
+	input		[`RV32E_WIDTH-1:0]	write_data,
 	input		[15:0]	half_data,
 	input		[7:0]	byte_data,
-	output	reg	[`ysyx_25060166_WIDTH-1:0]	read_data
+	output	reg	[`RV32E_WIDTH-1:0]	read_data
 );
 
 	import "DPI-C" function int unsigned mem_read(input int unsigned addr, input int len);
