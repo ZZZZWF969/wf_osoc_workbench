@@ -1,4 +1,4 @@
-TOP_MODULE    := ysyx_25060166CPU 
+TOP_MODULE    := RV32E_CPU 
 VERILATOR     := verilator
 
 VL_SRC_DIR    := vsrc
