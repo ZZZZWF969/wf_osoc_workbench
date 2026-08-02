@@ -29,6 +29,10 @@ for (int i = 0;i < number;i++){
 	printf("%d. %s: 0x%08x \t \n", i,regs[i],cpu.gpr[i]);
 }
 printf("%d. PC: 0x%08x \t \n", number, cpu.pc);
+printf("mtvec: 0x%08x \t \n", cpu.csr.mtvec);
+printf("mepc: 0x%08x \t \n", cpu.csr.mepc);
+printf("mstatus: 0x%08x \t \n", cpu.csr.mstatus);
+printf("mcause: 0x%08x \t \n", cpu.csr.mcause);
 //printf("\n");
 }
 
@@ -40,7 +44,7 @@ int name_to_index(const char* s, bool* success){
 		//printf("%d",index);
 	}
 	if (index == -1) {
-		printf("failed to find the reister.\n"); 
+		printf("failed to find the register.\n"); 
 		*success = false; 
 		return 0;
 	}
