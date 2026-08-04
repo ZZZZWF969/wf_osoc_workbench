@@ -5,6 +5,12 @@ module RV32E_IDU(
 	output	reg				mem_wen,
 	output	reg				mem_ren,
 	output	reg				uncon_jump,
+	output	reg				trap,
+	output	reg				mret,
+	output	reg				csr_wen,
+	output	reg				csr_ren,
+	output	reg		[11:0]	csr_wrd,
+	output	reg		[11:0]	csr_rrd,
 	output			[4:0]	rs1_addr,
 	output			[4:0]	rs2_addr,
 	output	reg				reg_wen,
@@ -42,11 +48,16 @@ module RV32E_IDU(
 	always @(*) begin
 
 		mem_wen = 0; mem_ren = 0; reg_wen = 0;			//default assignment to avoide latch
-		EXU_OP = `EXU_DEFAULT; imm = 0;	uncon_jump = 0; 
+		EXU_OP = `EXU_DEFAULT; imm = 0;	uncon_jump = 0; trap = 0; mret = 0;
+		csr_wen = 0; csr_ren = 0; csr_wrd = 0; csr_rrd = 0;
 
-		if(inst == 32'h00100073) begin
-			sim_finish();
-		end
+		// if(inst == 32'h0010_0073) begin
+		// 	sim_finish();
+		// end
+		// if(inst == 32'h3020_0073) begin
+		// 	EXU_OP = `MRET; mret = 1;
+		// 	csr_rrd = `MEPC;
+		// end
 
 		//I_TYPE
 		if(opcode == 7'b0010011) begin	
@@ -115,6 +126,38 @@ module RV32E_IDU(
 				end
 				default: begin end
 			endcase
+		end
+
+		//CSR INST
+		if(opcode == 7'b1110011) begin
+			if(inst == 32'h0010_0073) begin
+				sim_finish();
+			end else if(inst == 32'h3020_0073) begin
+				EXU_OP = `MRET; mret = 1;
+				csr_rrd = `MEPC; csr_ren = 1;
+			end else if(inst == 32'h0000_0073) begin
+				EXU_OP = `ECALL; trap = 1; csr_rrd = `MTVEC; csr_ren = 1;
+			end else if(funct3 == 3'b001) begin
+				EXU_OP = `CSRRW; csr_wrd = inst[31:20]; csr_rrd = inst[31:20];
+				csr_wen = 1; reg_wen = 1; csr_ren = 1;
+			end else if(funct3 == 3'b010) begin
+				EXU_OP = `CSRRS; csr_wrd = inst[31:20]; csr_rrd = inst[31:20];
+				csr_wen = 1; reg_wen = 1; csr_ren = 1;
+			end
+			// case (funct3)
+			// 	3'b000: begin
+			// 		EXU_OP = `ECALL; trap = 1;
+			// 	end 
+			// 	3'b001: begin
+			// 		EXU_OP = `CSRRW; csr_wrd = immI; csr_rrd = immI;
+			// 		csr_wen = 1; reg_wen = 1;
+			// 	end
+			// 	3'b010: begin
+			// 		EXU_OP = `CSRRS; csr_wrd = immI; csr_rrd = immI;
+			// 		csr_wen = 1; reg_wen = 1;
+			// 	end
+			// 	default: begin end
+			// endcase
 		end
 
 		//R_TYPE

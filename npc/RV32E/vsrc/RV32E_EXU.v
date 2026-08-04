@@ -6,6 +6,7 @@ module RV32E_EXU(
 	input	[`RV32E_WIDTH-1:0]	pc,
 	input	[`RV32E_WIDTH-1:0]	imm,
 	input	[`RV32E_WIDTH-1:0]	mem_rdata,
+	input	[`RV32E_WIDTH-1:0]	csr_rdata,
     input   [5:0]       op,
 	output	reg			con_jump,
 	output	reg			half_write,
@@ -14,6 +15,7 @@ module RV32E_EXU(
 	output	reg	[7:0]	mem_byte,
 	output	reg	[`RV32E_WIDTH-1:0]	mem_addr,
     output  reg [`RV32E_WIDTH-1:0]  reg_write_data,
+	output	reg	[`RV32E_WIDTH-1:0]	csr_write_data,
 	output	reg [`RV32E_WIDTH-1:0]	mem_write_data
 );
 
@@ -22,11 +24,12 @@ module RV32E_EXU(
 
 	reg         use_pc_src1;
 	reg         use_imm_src2;
+	reg			use_csr_src2;
 	reg         cmp_imm;
 	reg  [3:0]  alu_op;
 
 	wire [`RV32E_WIDTH-1:0] src1 = use_pc_src1 ? pc : reg_data_0;
-	wire [`RV32E_WIDTH-1:0] src2 = use_imm_src2 ? imm : reg_data_1;
+	wire [`RV32E_WIDTH-1:0] src2 = use_csr_src2 ? csr_rdata : use_imm_src2 ? imm : reg_data_1;
 	wire [`RV32E_WIDTH-1:0] cmp_src2 = cmp_imm ? imm : reg_data_1;
 
 	wire [`RV32E_WIDTH-1:0] alu_result;
@@ -48,9 +51,9 @@ module RV32E_EXU(
 
 	always @(*) begin
 
-		con_jump = 0; mem_addr = 0; reg_write_data = 0;	mem_write_data = 0;
-		mem_half_data = 0; half_write = 0; byte_write = 0; mem_byte = 0;
-		use_pc_src1 = 0; use_imm_src2 = 0; cmp_imm = 0;
+		mem_addr = 0; reg_write_data = 0; mem_write_data = 0; csr_write_data = 0;
+		mem_half_data = 0; half_write = 0; byte_write = 0; mem_byte = 0; con_jump = 0;
+		use_pc_src1 = 0; use_imm_src2 = 0; cmp_imm = 0; use_csr_src2 = 0;
 		alu_op = `ALU_ADD;
 
 		case (op)
@@ -218,6 +221,22 @@ module RV32E_EXU(
 			`SRAI: begin
 				use_imm_src2 = 1; alu_op = `ALU_SRA;
 				reg_write_data = alu_result;
+			end
+			//TODO
+			`CSRRW: begin
+				reg_write_data = csr_rdata;
+				csr_write_data = reg_data_0;
+			end
+			`CSRRS: begin
+				alu_op = `ALU_OR; use_csr_src2 = 1;
+				csr_write_data = alu_result;
+				reg_write_data = csr_rdata;
+			end
+			`MRET: begin
+				mem_addr = csr_rdata;
+			end
+			`ECALL: begin
+				mem_addr = csr_rdata;
 			end
 
 			default: begin end

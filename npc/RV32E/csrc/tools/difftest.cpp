@@ -1,7 +1,14 @@
 #include "../include/difftest.h"
 #include "../include/memory.h"
 
-CPU_state cpu;
+CPU_state cpu = {
+	.csr = {
+		.mcause = 0x0b,
+//		.mepc = 0,
+		.mstatus = 0x1800,
+//		.mtvec = 0
+	}
+};
 
 void cpu_state_update(){
 	for(int i = 0; i < 32l; i++){
