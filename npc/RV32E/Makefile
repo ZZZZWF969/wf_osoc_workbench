@@ -1,11 +1,14 @@
-TOP_MODULE    := RV32E_CPU 
+TOP_MODULE    := RV32E_CPU
 VERILATOR     := verilator
+
+NPC_HOME      := $(abspath .)
+NEMU_HOME     ?= $(abspath ../../../nemu)
 
 VL_SRC_DIR    := vsrc
 TB_SRC_DIR    := csrc
 BUILD_DIR     := build/verilator
-INC_DIR       := csrc/include      
-VINC_DIR      := vsrc/include 
+INC_DIR       := $(abspath csrc/include)
+VINC_DIR      := $(abspath vsrc/include)
 
 VL_SRCS       := $(shell find $(abspath $(VL_SRC_DIR)) -name "*.v" -or -name "*.sv")
 SRC		  	  := $(shell find $(abspath $(TB_SRC_DIR)) -name "*.c" -or -name "*.cc" -or -name "*.cpp")
@@ -34,6 +37,23 @@ CFLAGS += -I /home/wf/Desktop/ysyx-workbench/nemu/tools/capstone/repo/include
 $(LIBCAPSTONE):
 	$(MAKE) -C /home/wf/Desktop/ysyx-workbench/nemu/tools/capstone
 
+# ==================== Kconfig 集成（make menuconfig 编辑功能开关） ====================
+-include $(NPC_HOME)/include/config/auto.conf
+include $(NPC_HOME)/scripts/config.mk
+
+AUTOCONF_H := $(NPC_HOME)/include/generated/autoconf.h
+AUTO_CONF  := $(NPC_HOME)/include/config/auto.conf
+
+# 首次编译时若无 .config，则从默认配置自动生成
+.config: $(CONF)
+	@mkdir -p $(dir $(AUTO_CONF)) $(dir $(AUTOCONF_H))
+	@$(CONF) $(silent) --defconfig=$(NPC_HOME)/configs/defconfig $(Kconfig)
+
+# .config 变更后重新生成 C 宏与 make 变量
+$(AUTO_CONF) $(AUTOCONF_H): .config $(FIXDEP)
+	@mkdir -p $(dir $(AUTO_CONF)) $(dir $(AUTOCONF_H))
+	@$(CONF) $(silent) --syncconfig $(Kconfig)
+
 # 阶段1参数：仅生成头文件（无--exe，不关联C++代码）
 VL_HEADER_FLAGS := --cc \
 	             --top-module $(TOP_MODULE) \
@@ -43,15 +63,15 @@ VL_HEADER_FLAGS := --cc \
 
 # 阶段2参数：完整编译（含--exe，关联所有C++代码）
 VL_FULL_FLAGS  := --cc --exe --build -j $(CPU_CORES) \
-				 --trace \
 	             --top-module $(TOP_MODULE) \
 	             --Mdir $(BUILD_DIR) \
 				 --public-flat-rw \
 				 -Wall \
 	             -I$(INC_DIR) \
 	             -I$(VINC_DIR) \
-	             -CFLAGS "-I$(INC_DIR) -std=c++17" \
+	             -CFLAGS "-I$(INC_DIR) -I$(NPC_HOME)/include -std=c++17" \
 				 -LDFLAGS "$(LDFLAGS)"
+VL_FULL_FLAGS  += $(if $(filter y,$(CONFIG_NPC_WAVE)),--trace,)
 
 # 阶段1：仅生成Verilator头文件（打破循环依赖
 $(VL_HEADER): $(VL_SRCS)
@@ -60,7 +80,7 @@ $(VL_HEADER): $(VL_SRCS)
 	@$(VERILATOR) $(VL_HEADER_FLAGS) $(VL_SRCS)
 
 # 阶段2：完整编译（关联C++代码，此时头文件已存在）
-$(SIM_EXE): $(VL_HEADER) $(TB_SRCS)
+$(SIM_EXE): $(VL_HEADER) $(TB_SRCS) $(AUTO_CONF) $(AUTOCONF_H)
 	@echo "===== 阶段2：完整编译Verilog+CPP ====="
 	@$(VERILATOR) $(VL_FULL_FLAGS) $(VL_SRCS) $(TB_SRCS)
 

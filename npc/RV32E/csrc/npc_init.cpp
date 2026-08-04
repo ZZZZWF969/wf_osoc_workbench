@@ -1,10 +1,11 @@
 #include <getopt.h>
 #include "include/vmem.h"
 #include "include/npc.h"
+#include "include/sdb.h"
 
 static char* img_file = NULL;
 static char* diff_so_file = NULL;
-static int difftest_port = 1234;
+IFDEF(CONFIG_NPC_DIFFTEST, static int difftest_port = 1234;)
 
 static const uint32_t default_img [5] = {
   0x00000297,  // auipc t0,0
@@ -76,8 +77,10 @@ static int parse_args(int argc, char* argv[]){
 void npc_init(int argc, char *argv[]){
 	printf("argc: %d\n", argc);
 	printf("argv: %s\n", *argv);
+	init_regex();
+	IFDEF(CONFIG_NPC_WATCHPOINT, init_wp_pool();)
 	parse_args(argc, argv);
 	create_virtual_memory();
 	long img_size = load_img();
-	init_difftest(diff_so_file, img_size, difftest_port);
+	IFDEF(CONFIG_NPC_DIFFTEST, init_difftest(diff_so_file, img_size, difftest_port);)
 }

@@ -1,6 +1,7 @@
 #include "include/npcpp.hpp"
 #include "include/vmem.h"
 #include "include/state.h"
+#include "include/sdb.h"
 #include <iostream>
 #include <cstdlib>
 #include <vector>
@@ -16,13 +17,13 @@ void difftest_step(vaddr_t pc);
 void npctrap(word_t halt_pc, word_t halt_ret);
 
 void trace_and_difftest(){
-	difftest_step(top->PC);
+	IFDEF(CONFIG_NPC_DIFFTEST, difftest_step(top->PC);)
 }
 
 void exec_once(){
 	top->INST = vmem_read(top->PC, 4);		//取指
-	itrace_inst(top->PC, top->INST);
-	top->clk = 1; top->eval(); tfp->dump(wave_count++);	//时钟拉高
+	IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top->PC, top->INST);)
+	top->clk = 1; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉高
 	//仿真结束逻辑
 	if(Verilated::gotFinish()){
 		npctrap(top->PC, top_gpr[10]);
@@ -31,7 +32,7 @@ void exec_once(){
 		<<std::endl;
 		return;
 	}
-	top->clk = 0; top->eval(); tfp->dump(wave_count++);	//时钟拉低
+	top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉低
 
 	//itrace
 	// char logbuf[128];
@@ -55,6 +56,7 @@ void exec_once(){
 	// disassemble(p, logbuf + sizeof(logbuf) - p, top->PC, (uint8_t *)&top->INST, ilen);
 	//itrace
 	
+	IFDEF(CONFIG_NPC_WATCHPOINT, watchpoint_difftest();)
 	return;
 }
 
@@ -71,13 +73,13 @@ extern "C" void execute(uint64_t n){
 
 	for( ; n > 0; n--){
 		if(npc_state.state != NPC_RUNNING){
-			itrace_display();
+			IFDEF(CONFIG_NPC_ITRACE, itrace_display();)
 			break;
 		}
 		exec_once();
 		if(top->RAM_ADDR == 0xa00003f8 || top->RAM_ADDR == 0xa0000048 || top->RAM_ADDR == 0xa000004c){
 			// std::cout<<"skip difftest"<<std::endl;
-			difftest_skip_ref();
+			IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
 		}else{
 			trace_and_difftest();
 		}

@@ -1,5 +1,7 @@
 #include "../include/npc.h"
 
+#ifdef CONFIG_NPC_ITRACE
+
 #define IRING_BUF_SIZE 16
 
 void disassemble(char *str, int size, uint64_t pc, uint8_t *code, int nbyte);
@@ -36,3 +38,5 @@ void itrace_display(){
         // puts(buffer);
     }
 }
+
+#endif // CONFIG_NPC_ITRACE

@@ -1,0 +1,9 @@
+# Kconfig 生成物
+.config
+.config.old
+include/config/
+include/generated/
+
+# npc/.gitignore 用 * 忽略了所有文件，这里放行需要提交的 Kconfig 源文件
+!Kconfig
+!configs/defconfig

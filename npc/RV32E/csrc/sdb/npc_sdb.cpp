@@ -1,8 +1,9 @@
-#include "include/npc.h"
-#include "include/state.h"
+#include "../include/npc.h"
+#include "../include/state.h"
 #include <readline/readline.h>
 #include <readline/history.h>
-#include "include/memory.h"
+#include "../include/memory.h"
+#include "../include/sdb.h"
 
 bool is_batch_mode = false;
 
@@ -11,7 +12,6 @@ void batch_mode_run(){
 }
 
 void reg_display();
-word_t pmem_read(paddr_t addr, int len);
 static int cmd_help(char *args);
 
 bool in_mem(paddr_t paddr){
@@ -67,7 +67,12 @@ static int cmd_info(char* args){
 			printf("All register have printed\n");
 		}
 		else if (strcmp(args,"w") == 0){
-			printf("add code to implement this\n");
+			IFDEF(CONFIG_NPC_WATCHPOINT,
+				bool wp_exisit = exihibit_watchpoint();
+				if (wp_exisit) printf("All watchpoint have been printed.\n");
+				else printf("No watchpoint can print.\n");
+			)
+			IFNDEF(CONFIG_NPC_WATCHPOINT, printf("watchpoint is not enabled. Run 'make menuconfig' to enable it.\n");)
 		}
 		else{
 			printf("unknow command %s\n", args);
@@ -85,8 +90,12 @@ static int cmd_x(char* args){
 		printf("Invalid input!\n");
 		return -1;
 		}
-	int len = atoi(str_len); int addr = strtol(addr_str,NULL,16);
-	//word_t address = expr(addr_str, &success); int addr = (int)address;
+	int len = atoi(str_len);
+	word_t address = expr(addr_str, &success); int addr = (int)address;
+	if (!success) {
+		printf("Invalid address expression.\n");
+		return 0;
+	}
 	if (!in_mem(addr) || !in_mem(addr + len - 1)) {
 		printf("Not a valid address.\n");
 		return 0;
@@ -99,14 +108,36 @@ static int cmd_x(char* args){
 }
 
 static int cmd_p(char* args){
+	bool success;
+	word_t result = expr(args,&success);
+	if (!success) printf("Invalid expression\n");
+	else printf("Result: %u\n",result);
 	return 0;
 }
 
 static int cmd_w(char* args){
+	IFDEF(CONFIG_NPC_WATCHPOINT,
+		if (!args) printf("Where is your f**king expression?\n");
+		else wp_create(args);
+		bool wp_exisit = exihibit_watchpoint();
+		if (wp_exisit) printf("Gift you a watchpoint exhibit.\n");
+		else printf("There isn't any watchpoint right now.\n");
+	)
+	IFNDEF(CONFIG_NPC_WATCHPOINT, printf("watchpoint is not enabled. Run 'make menuconfig' to enable it.\n");)
 	return 0;
 }
 
 static int cmd_d(char* args){
+	IFDEF(CONFIG_NPC_WATCHPOINT,
+		char* endptr;
+		int NO = strtol(args, &endptr, 10);
+		bool dlt_suc = wp_delete(NO);
+		if(dlt_suc) printf("Watchpoint with NO.%d has deleted.\n",NO);
+		bool wp_exisit = exihibit_watchpoint();
+		if (wp_exisit) printf("Gift you a watchpoint exhibit.\n");
+		else printf("There isn't any watchpoint right now.\n");
+	)
+	IFNDEF(CONFIG_NPC_WATCHPOINT, printf("watchpoint is not enabled. Run 'make menuconfig' to enable it.\n");)
 	return 0;
 }
 

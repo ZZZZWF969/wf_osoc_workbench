@@ -3,6 +3,8 @@
 #include <cstdlib>
 #include "include/state.h"
 #include "include/device.h"
+#include <generated/autoconf.h>
+#include "macro.h"
 
 byte_t* vmem = NULL;  //用全局变量方便操作
 
@@ -56,7 +58,8 @@ void pmem_write(paddr_t addr, int len, word_t data){
 	}
 //	printf("serial write: 0x%08x\n", addr);
 	if(addr == SERIAL_PORT){
-		printf("%c",data);
+//		printf("%c",data);
+		putc(data, stderr);
 	}
     else{
 //		printf(ANSI_FG_RED"address = %08x out of bound of memory" ANSI_NONE "\n", addr);
@@ -67,7 +70,7 @@ void pmem_write(paddr_t addr, int len, word_t data){
 uint64_t get_time();
 // void get_time();
 
-word_t pmem_read(paddr_t addr, int len){
+extern "C" word_t pmem_read(paddr_t addr, int len){
     if(addr-MEM_BASE < MEMSIZE){
         word_t ret = host_read(guest_to_host(addr), len);
         return ret;
@@ -92,11 +95,11 @@ void vmem_write(vaddr_t addr, int len, word_t data){
 }
 
 extern "C" word_t mem_read(vaddr_t addr, int len){
-//	printf("memory read at address: 0x%08x\n",addr);
+	IFDEF(CONFIG_NPC_MTRACE, printf("memory read at address: 0x%08x\n",addr);)
     return vmem_read(addr, len);
 }
 
 extern "C" void mem_write(vaddr_t addr, int len, word_t data){
-//	printf("memory write at address: 0x%08x , data: 0x%08x\n",addr, data);
+	IFDEF(CONFIG_NPC_MTRACE, printf("memory write at address: 0x%08x , data: 0x%08x\n",addr, data);)
     return vmem_write(addr, len, data);
 }

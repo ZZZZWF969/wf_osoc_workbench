@@ -1,6 +1,8 @@
 #include "../include/difftest.h"
 #include "../include/memory.h"
 
+#ifdef CONFIG_NPC_DIFFTEST
+
 CPU_state cpu = {
 	.csr = {
 		.mcause = 0x0b,
@@ -127,3 +129,5 @@ void difftest_step(vaddr_t pc){
 
 	checkreg(&ref_r, pc);
 }
+
+#endif // CONFIG_NPC_DIFFTEST
