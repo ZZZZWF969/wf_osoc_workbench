@@ -13,7 +13,7 @@ typedef struct{
 	char specifier;		//占位类型
 } FormatSpecifier;
 
-int vsprintf(char *out, const char *fmt, va_list ap);
+//int vsprintf(char *out, const char *fmt, va_list ap);
 
 static int specifier_indentify(FormatSpecifier* fmspcf, const char* fmt){
 	const char* start = fmt; 
@@ -78,72 +78,33 @@ int vsprintf(char *out, const char *fmt, va_list ap) {
 				case 'i':
 				case 'd': {
 					int num = va_arg(ap, int);
-					unsigned int abs_num;
-					int is_negative = 0;
+					unsigned int abs_num = (num < 0) ? (0U - (unsigned int)num)
+					                                 : (unsigned int)num;
 
-					//提取数值
-					if (num < 0){
-						is_negative = 1;
-						if (num == INT_MIN){
-							abs_num = (unsigned int)INT_MAX + 1;
-						} else{
-							abs_num = (unsigned int)(-num);
-						}
-					} else{
-						abs_num = (unsigned int)num;
-					}
+					// use the buffer backwards 倒着写
+					char *p = num_buf + sizeof(num_buf) - 1;
+					*p = '\0';
+					do {
+						*--p = '0' + abs_num % 10;
+						abs_num /= 10;
+					} while (abs_num);
+					if (num < 0) *--p = '-';
 
-					if (abs_num == 0){
-						if(formatspeci.width){
-							for(int i = 0; i < formatspeci.width; i++){
-								*out++ = '0';
-							}
-						}else{
-							*out++ = '0';
-						}
-					}else{
-						int padding = formatspeci.width>1? formatspeci.width-1:0;
-						char *p = num_buf + sizeof(num_buf) - 1;	//倒着用缓冲区
-						*p-- = '\0';
-						if(formatspeci.left_align){
-							for(int i = 0; i < padding; i++){
-								*p-- = ' ';
-							}
-							while (abs_num > 0){
-								*p-- = '0' + (abs_num % 10);
-								abs_num /= 10;
-							}
-							if (is_negative){
-								*p-- = '-';
-							}
-						}else{
-							while (abs_num > 0){
-								*p-- = '0' + (abs_num % 10);
-								abs_num /= 10;
-							}
-							if(is_negative){
-								if(formatspeci.zero_pad){
-									for(int i = 0; i < padding-1; i++){
-										*p-- = '0';
-									}
-									*p-- = '-';
-								}else{
-									*p-- = '-';
-									for(int i = 0; i < padding-1; i++){
-										*p-- = ' ';
-									}
-								}
-							}else{
-								for(int i = 0; i < padding; i++){
-									*p-- = formatspeci.zero_pad? '0':' ';
-								}
-							}
-						}
-						p++;	//之前的自减运算会导致p指向num_buf没有用过的地方，从而导致未知行为
-						//把数字推送到目标
-						while (p != &num_buf[31]){
-							*out++ = *(p++);
-						}
+					// padding = width - actual length of the number
+					int len = num_buf + sizeof(num_buf) - 1 - p;
+					int padding = formatspeci.width > len ?
+					              formatspeci.width - len : 0;
+
+					if (formatspeci.left_align) {
+						memcpy(out, p, len); out += len;
+						for (int i = 0; i < padding; i++) *out++ = ' ';
+					} else if (formatspeci.zero_pad) {
+						if (*p == '-') { *out++ = '-'; p++; len--; } //先把负号搬过去
+						for (int i = 0; i < padding; i++) *out++ = '0';
+						memcpy(out, p, len); out += len;
+					} else {
+						for (int i = 0; i < padding; i++) *out++ = ' ';
+						memcpy(out, p, len); out += len;
 					}
 					break;
 				}
