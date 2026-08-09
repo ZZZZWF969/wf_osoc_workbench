@@ -26,16 +26,17 @@ void itrace_inst(word_t pc, uint32_t inst){
 void itrace_display(){
     if(!full && !inst_count) return;
 
-    int end = inst_count;
-    int i = full?end:0;
+    int count = full ? IRING_BUF_SIZE : inst_count;
+    int start = full ? inst_count : 0;
+    int i;
 
-    for(; i != end; i = (i+1)%16){
-        if((i+1)%IRING_BUF_SIZE == end)     printf("--->");
-        else    printf("    ");
-        printf("0x%08x    \n", iring_buffer[i].pc);
-        // char buffer[32];
-        // disassemble(buffer, sizeof(buffer), iring_buffer[i].pc, (uint8_t*)&iring_buffer[i].inst, 4);
-        // puts(buffer);
+    for(i = 0; i < count; i++){
+        int idx = (start + i) % IRING_BUF_SIZE;
+        char buffer[64];
+        disassemble(buffer, sizeof(buffer), iring_buffer[idx].pc, (uint8_t*)&iring_buffer[idx].inst, 4);
+        if((idx + 1) % IRING_BUF_SIZE == inst_count)    printf("--->");
+        else                                            printf("    ");
+        printf("0x%08x    %s\n", iring_buffer[idx].pc, buffer);
     }
 }
 

@@ -32,7 +32,8 @@ IMG			  ?= $(if $(image),$(image)-riscv32e-npc.bin,)
 LDFLAGS += -lreadline -lncurses -lcapstone
 
 LIBCAPSTONE = /home/wf/Desktop/ysyx-workbench/nemu/tools/capstone/repo/libcapstone.so.5
-CFLAGS += -I /home/wf/Desktop/ysyx-workbench/nemu/tools/capstone/repo/include
+CAPSTONE_INC = /home/wf/Desktop/ysyx-workbench/nemu/tools/capstone/repo/include
+CFLAGS += -I $(CAPSTONE_INC)
 #src/trace/disasm.c: $(LIBCAPSTONE)
 $(LIBCAPSTONE):
 	$(MAKE) -C /home/wf/Desktop/ysyx-workbench/nemu/tools/capstone
@@ -69,7 +70,7 @@ VL_FULL_FLAGS  := --cc --exe --build -j $(CPU_CORES) \
 				 -Wall \
 	             -I$(INC_DIR) \
 	             -I$(VINC_DIR) \
-	             -CFLAGS "-I$(INC_DIR) -I$(NPC_HOME)/include -std=c++17" \
+	             -CFLAGS "-I$(INC_DIR) -I$(NPC_HOME)/include -I$(CAPSTONE_INC) -std=c++17" \
 				 -LDFLAGS "$(LDFLAGS)"
 VL_FULL_FLAGS  += $(if $(filter y,$(CONFIG_NPC_WAVE)),--trace,)
 

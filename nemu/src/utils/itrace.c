@@ -35,6 +35,6 @@ void itrace_display(){
 		#ifdef CONFIG_ITRACE
         disassemble(buffer, sizeof(buffer), iring_buffer[i].pc, (uint8_t*)&iring_buffer[i].inst, 4);
         #endif
-		puts(buffer);
+		printf("%s\n", buffer);
     }
 }

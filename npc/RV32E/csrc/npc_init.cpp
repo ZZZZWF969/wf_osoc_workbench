@@ -17,6 +17,7 @@ static const uint32_t default_img [5] = {
 
 void init_difftest(char *ref_so_file, long img_size, int port);
 void batch_mode_run();
+IFDEF(CONFIG_NPC_ITRACE, void init_disasm();)
 
 static long load_img(){
 	if (img_file == NULL) {
@@ -78,6 +79,7 @@ void npc_init(int argc, char *argv[]){
 	printf("argc: %d\n", argc);
 	printf("argv: %s\n", *argv);
 	init_regex();
+	IFDEF(CONFIG_NPC_ITRACE, init_disasm();)
 	IFDEF(CONFIG_NPC_WATCHPOINT, init_wp_pool();)
 	parse_args(argc, argv);
 	create_virtual_memory();

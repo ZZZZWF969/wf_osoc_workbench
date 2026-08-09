@@ -44,12 +44,14 @@ static inline void pattern_decode(const char *str, int len,
     } \
   }
 
+//二分递归
 #define macro2(i)  macro(i);   macro((i) + 1)
 #define macro4(i)  macro2(i);  macro2((i) + 2)
 #define macro8(i)  macro4(i);  macro4((i) + 4)
 #define macro16(i) macro8(i);  macro8((i) + 8)
 #define macro32(i) macro16(i); macro16((i) + 16)
 #define macro64(i) macro32(i); macro32((i) + 32)
+
   macro64(0);
   panic("pattern too long");
 #undef macro
