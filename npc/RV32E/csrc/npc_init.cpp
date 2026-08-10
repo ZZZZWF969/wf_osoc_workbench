@@ -83,6 +83,7 @@ void npc_init(int argc, char *argv[]){
 	IFDEF(CONFIG_NPC_WATCHPOINT, init_wp_pool();)
 	parse_args(argc, argv);
 	create_virtual_memory();
+	init_device();
 	long img_size = load_img();
 	IFDEF(CONFIG_NPC_DIFFTEST, init_difftest(diff_so_file, img_size, difftest_port);)
 }

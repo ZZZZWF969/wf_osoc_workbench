@@ -7,6 +7,7 @@
 #include "c2cpp.h"
 #include <generated/autoconf.h>
 #include "macro.h"
+#include "device.h"
 
 #define bit_width 32
 #define reg_number 32

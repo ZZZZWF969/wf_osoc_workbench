@@ -7,6 +7,7 @@
 #include <vector>
 #include <cstdint>
 #include <string.h>
+#include "include/device.h"
 
 extern void sim_finish();
 extern void halt();
@@ -33,28 +34,6 @@ void exec_once(){
 		return;
 	}
 	top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉低
-
-	//itrace
-	// char logbuf[128];
-	// char *p = logbuf;
-	// p += snprintf(p, sizeof(logbuf), "0x%08x", top->PC);
-	// int ilen = 4;			//length of instruction
-	// int i;
-	// uint8_t *inst = (uint8_t *)&top->INST;
-	// for (i = ilen - 1; i >= 0; i --) {
-	// 	p += snprintf(p, 4, " %02x", inst[i]);
-	// }
-	// printf("%s\n",logbuf);
-	// int ilen_max = 4;
-	// int space_len = ilen_max - ilen;
-	// if (space_len < 0) space_len = 0;
-	// space_len = space_len * 3 + 1;
-	// memset(p, ' ', space_len);
-	// p += space_len;
-
-	// void disassemble(char *str, int size, uint64_t p_c, uint8_t *code, int nbyte);
-	// disassemble(p, logbuf + sizeof(logbuf) - p, top->PC, (uint8_t *)&top->INST, ilen);
-	//itrace
 	
 	IFDEF(CONFIG_NPC_WATCHPOINT, watchpoint_difftest();)
 	return;
@@ -77,7 +56,7 @@ extern "C" void execute(uint64_t n){
 			break;
 		}
 		exec_once();
-		if(top->RAM_ADDR == 0xa00003f8 || top->RAM_ADDR == 0xa0000048 || top->RAM_ADDR == 0xa000004c){
+		if(is_io_device(top->RAM_ADDR)){
 			// std::cout<<"skip difftest"<<std::endl;
 			IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
 		}else{

@@ -5,6 +5,7 @@
 #include "include/device.h"
 #include <generated/autoconf.h>
 #include "macro.h"
+#include "include/device.h"
 
 byte_t* vmem = NULL;  //用全局变量方便操作
 
@@ -49,37 +50,34 @@ void memory_not_use(){
 
 uint8_t* guest_to_host(paddr_t paddr){return vmem+paddr-MEM_BASE;}
 
-void serial_putch(char c);
+//void serial_putch(char c);
 
 void pmem_write(paddr_t addr, int len, word_t data){
     if(addr-MEM_BASE < MEMSIZE){
         host_write(guest_to_host(addr), len, data);
         return;
-	}
-//	printf("serial write: 0x%08x\n", addr);
-	if(addr == SERIAL_PORT){
-//		printf("%c",data);
-		putc(data, stderr);
-	}
-    else{
-//		printf(ANSI_FG_RED"address = %08x out of bound of memory" ANSI_NONE "\n", addr);
+	}else if(is_io_device(addr)){
+		//serial_putch(data);
+		io_device_write(addr, len, data);
+	}else{
+		printf(ANSI_FG_RED"address = %08x out of bound of memory" ANSI_NONE "\n", addr);
 		assert(0);
     }
 }
 
-uint64_t get_time();
+//uint64_t get_time();
 // void get_time();
 
 extern "C" word_t pmem_read(paddr_t addr, int len){
     if(addr-MEM_BASE < MEMSIZE){
         word_t ret = host_read(guest_to_host(addr), len);
         return ret;
-    }else if(addr == RTC_ADDR){
-		return get_time();
+    }else if(is_io_device(addr)){
+		return io_device_read(addr, len);
+		// return get_time();
 		// get_time();
 		// return 0;
-	}
-    else{
+	}else{
 //		printf(ANSI_FG_RED"address = %08x out of bound of memory" ANSI_NONE "\n", addr);
 		return 0;
 		assert(0);
