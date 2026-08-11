@@ -30,6 +30,8 @@ endif
 IMG			  ?= $(if $(image),$(image)-riscv32e-npc.bin,)
 
 LDFLAGS += -lreadline -lncurses -lcapstone
+# 下面有修改：为键盘设备(SDL_PollEvent 等)添加 SDL2 链接
+LDFLAGS += -lSDL2
 
 LIBCAPSTONE = /home/wf/Desktop/ysyx-workbench/nemu/tools/capstone/repo/libcapstone.so.5
 CAPSTONE_INC = /home/wf/Desktop/ysyx-workbench/nemu/tools/capstone/repo/include

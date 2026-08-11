@@ -16,6 +16,7 @@
 
 #define SERIAL_SIZE 1
 #define RTC_SIZE 16
+#define KBD_SIZE 4
 
 void init_device();
 int is_io_device(paddr_t addr);
@@ -23,6 +24,8 @@ int is_io_device(paddr_t addr);
 void serial_putch(char c);
 uint64_t get_time();
 word_t rtc_read(paddr_t addr, int len);
+void init_keyboard();
+word_t kbd_read();
 void io_device_write(paddr_t addr, int len, word_t data);
 word_t io_device_read(paddr_t addr, int len);
 

@@ -12,7 +12,7 @@ DEVICE devices[MAX_DEVICE_NUM];
 
 void add_io_device(DEVICE device){
 	if(devices_num == MAX_DEVICE_NUM){
-		printf("devices number over limit\n");
+		printf("devices overflow!\n");
 		assert(0);
 	}
 	devices[devices_num] = device;
@@ -33,9 +33,18 @@ void add_rtc(){
 	add_io_device(rtc_clock);
 }
 
+void add_keyboard(){
+	init_keyboard();
+	DEVICE keyboard = { .name = "keyboard" };
+	keyboard.device_base_addr = KBD_ADDR;
+	keyboard.size = KBD_SIZE;
+	add_io_device(keyboard);
+}
+
 void init_device(){
 	add_serial();
 	add_rtc();
+	add_keyboard();
 }
 
 //judge if memory address is a io device
@@ -80,6 +89,10 @@ word_t io_device_read(paddr_t addr, int len){
 	if(strcmp(target.name, "rtc_clock") == 0){
 		//return rtc_read data
 		return rtc_read(addr, len);
+	}
+	if(strcmp(target.name, "keyboard") == 0){
+		//return keyboard data
+		return kbd_read();
 	}
 	//actual should not reach here
 	return 0;
