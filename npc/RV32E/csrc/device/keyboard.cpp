@@ -73,18 +73,18 @@ static void poll_sdl_events(){
 }
 
 void init_keyboard(){
-  // 初始化 SDL 的视频子系统，之后才能创建窗口和接收键盘事件
-  if (SDL_Init(SDL_INIT_VIDEO) != 0){
-    printf("SDL init failed: %s\n", SDL_GetError());
-    assert(0);
-  }
-  SDL_Window *window = SDL_CreateWindow("NPC Keyboard", SDL_WINDOWPOS_CENTERED,
-                                        SDL_WINDOWPOS_CENTERED, 640, 480, 0);
-  if (window == NULL){
-    printf("SDL create window failed: %s\n", SDL_GetError());
-    assert(0);
-  }
-  init_keymap();
+// 下面有修改：窗口创建已合并到 vga.cpp 的 init_vga()，SDL 由 VGA 统一初始化
+// 	if (SDL_Init(SDL_INIT_VIDEO) != 0){
+// 		printf("SDL init failed: %s\n", SDL_GetError());
+// 		assert(0);
+// 	}
+// 	SDL_Window *window = SDL_CreateWindow("NPC Keyboard", SDL_WINDOWPOS_CENTERED,
+// 										  SDL_WINDOWPOS_CENTERED, 640, 480, 0);
+// 	if (window == NULL){
+// 		printf("SDL create window failed: %s\n", SDL_GetError());
+// 		assert(0);
+// 	}
+	init_keymap();
 }
 
 // guest 读键盘寄存器时的入口：先轮询一遍 SDL 事件，再从队列取一个事件返回

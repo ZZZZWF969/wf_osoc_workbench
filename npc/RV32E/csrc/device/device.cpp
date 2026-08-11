@@ -41,9 +41,26 @@ void add_keyboard(){
 	add_io_device(keyboard);
 }
 
+void add_vgactl(){
+	init_vga();
+	DEVICE vga_ctl = { .name = "vgactl" };
+	vga_ctl.device_base_addr = VGACTL_ADDR;
+	vga_ctl.size = VGACTL_SIZE;
+	add_io_device(vga_ctl);
+}
+
+void add_fb(){
+	DEVICE fb_dev = { .name = "fb" };
+	fb_dev.device_base_addr = FB_ADDR;
+	fb_dev.size = FB_SIZE;
+	add_io_device(fb_dev);
+}
+
 void init_device(){
 	add_serial();
 	add_rtc();
+	add_vgactl();
+	add_fb();
 	add_keyboard();
 }
 
@@ -80,6 +97,12 @@ void io_device_write(paddr_t addr, int len, word_t data){
 	if(strcmp(target.name, "serial") == 0){
 		serial_putch(data);
 	}
+	if(strcmp(target.name, "vgactl") == 0){
+		vgactl_write(addr, len, data);
+	}
+	if(strcmp(target.name, "fb") == 0){
+		fb_write(addr, len, data);
+	}
 }
 
 word_t io_device_read(paddr_t addr, int len){
@@ -93,6 +116,14 @@ word_t io_device_read(paddr_t addr, int len){
 	if(strcmp(target.name, "keyboard") == 0){
 		//return keyboard data
 		return kbd_read();
+	}
+	if(strcmp(target.name, "vgactl") == 0){
+		//return vgactl data
+		return vgactl_read(addr, len);
+	}
+	if(strcmp(target.name, "fb") == 0){
+		//return fb data
+		return fb_read(addr, len);
 	}
 	//actual should not reach here
 	return 0;

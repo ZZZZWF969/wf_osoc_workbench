@@ -10,6 +10,9 @@
 #define SERIAL_PORT     (DEVICE_BASE + 0x00003f8)
 #define RTC_ADDR        (DEVICE_BASE + 0x0000048)
 #define KBD_ADDR		(DEVICE_BASE + 0x0000060)
+#define VGACTL_ADDR     (DEVICE_BASE + 0x0000100)
+#define SYNC_ADDR       (VGACTL_ADDR + 0x4)
+#define FB_ADDR         (MMIO_BASE   + 0x1000000)
 
 extern char _pmem_start;
 #define PMEM_SIZE (128 * 1024 * 1024)

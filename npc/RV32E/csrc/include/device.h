@@ -17,6 +17,10 @@
 #define SERIAL_SIZE 1
 #define RTC_SIZE 16
 #define KBD_SIZE 4
+#define VGACTL_SIZE 8
+#define VGA_W 400
+#define VGA_H 300
+#define FB_SIZE (VGA_W * VGA_H * 4)
 
 void init_device();
 int is_io_device(paddr_t addr);
@@ -26,6 +30,11 @@ uint64_t get_time();
 word_t rtc_read(paddr_t addr, int len);
 void init_keyboard();
 word_t kbd_read();
+void init_vga();
+word_t vgactl_read(paddr_t addr, int len);
+void vgactl_write(paddr_t addr, int len, word_t data);
+word_t fb_read(paddr_t addr, int len);
+void fb_write(paddr_t addr, int len, word_t data);
 void io_device_write(paddr_t addr, int len, word_t data);
 word_t io_device_read(paddr_t addr, int len);
 
