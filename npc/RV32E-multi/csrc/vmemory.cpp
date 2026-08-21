@@ -6,6 +6,7 @@
 #include <generated/autoconf.h>
 #include "macro.h"
 #include "include/device.h"
+#include "npcpp.hpp"
 
 byte_t* vmem = NULL;  //用全局变量方便操作
 
@@ -69,16 +70,14 @@ void pmem_write(paddr_t addr, int len, word_t data){
 // void get_time();
 
 extern "C" word_t pmem_read(paddr_t addr, int len){
+//	printf(ANSI_FG_RED"read_memory address = %08x , pc: %08x" ANSI_NONE "\n", addr, top->PC);
     if(addr-MEM_BASE < MEMSIZE){
         word_t ret = host_read(guest_to_host(addr), len);
         return ret;
     }else if(is_io_device(addr)){
 		return io_device_read(addr, len);
-		// return get_time();
-		// get_time();
-		// return 0;
 	}else{
-//		printf(ANSI_FG_RED"address = %08x out of bound of memory" ANSI_NONE "\n", addr);
+//		printf(ANSI_FG_RED"address = %08x out of bound of memory, pc: %08x" ANSI_NONE "\n", addr, top->PC);
 		return 0;
 		assert(0);
     }

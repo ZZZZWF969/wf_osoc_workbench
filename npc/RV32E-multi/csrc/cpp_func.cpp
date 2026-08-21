@@ -22,9 +22,9 @@ void trace_and_difftest(){
 }
 
 void exec_once(){
-	top->INST = vmem_read(top->PC, 4);		//取指
-	IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top->PC, top->INST);)
+//	top->INST = vmem_read(top->PC, 4);		//取指
 	top->clk = 1; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉高
+	IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_irpc, top_inst);)
 	//仿真结束逻辑
 	if(Verilated::gotFinish()){
 		npctrap(top->PC, top_gpr[10]);
@@ -34,7 +34,6 @@ void exec_once(){
 		return;
 	}
 	top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉低
-	
 	IFDEF(CONFIG_NPC_WATCHPOINT, watchpoint_difftest();)
 	return;
 }

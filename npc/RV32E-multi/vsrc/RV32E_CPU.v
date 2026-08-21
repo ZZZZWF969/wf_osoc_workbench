@@ -3,7 +3,7 @@
 module RV32E_CPU(
     input                   clk,
     input                   rst,
-	input   [`RV32E_WIDTH-1:0]	INST,
+//	input   [`RV32E_WIDTH-1:0]	INST,
     output  [`RV32E_WIDTH-1:0]  RAM_WDATA,
     output  [`RV32E_WIDTH-1:0]  RAM_ADDR,
 	output	[`RV32E_WIDTH-1:0]	PC,
@@ -40,6 +40,7 @@ module RV32E_CPU(
 	wire    [`RV32E_WIDTH-1:0]  programe_counter;
 	wire	[`RV32E_WIDTH-1:0]	mem_address;
 	wire	[`RV32E_WIDTH-1:0]	RAM_RDATA;
+	wire	[`RV32E_WIDTH-1:0]	INST;
 	
 	assign PC = programe_counter;
 	assign RAM_ADDR = mem_address;
@@ -51,7 +52,8 @@ module RV32E_CPU(
         .rst        (rst),
         .jump_sig   (jump_sig),
         .jump_addr  (mem_address),
-        .pc_count   (programe_counter)
+        .pc_count   (programe_counter),
+		.INST		(INST)
     );
 
 	wire [5:0]  exu_op;

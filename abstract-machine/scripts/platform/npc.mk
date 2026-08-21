@@ -30,5 +30,5 @@ image: image-dep
 	@$(OBJCOPY) -S --set-section-flags .bss=alloc,contents -O binary $(IMAGE).elf $(IMAGE).bin
 
 run: insert-arg
-	@$(MAKE) -C $(NPC_HOME)/RV32E run NPC_FLAGS="$(NPC_FLAGS)" IMG=$(IMAGE).bin
+	@$(MAKE) -C $(NPC_HOME)/RV32E-$(VERS) run NPC_FLAGS="$(NPC_FLAGS)" IMG=$(IMAGE).bin
 .PHONY: insert-arg

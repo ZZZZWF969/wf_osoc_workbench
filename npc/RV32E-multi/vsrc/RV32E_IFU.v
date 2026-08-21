@@ -10,6 +10,7 @@ module RV32E_IFU(
 );
 
     reg [`RV32E_WIDTH-1:0] pc;
+	reg	[`RV32E_WIDTH-1:0] ir_pc;
 	reg	[`RV32E_WIDTH-1:0] instruction;
 
 	import "DPI-C" function void halt();
@@ -18,7 +19,6 @@ module RV32E_IFU(
     always @(posedge clk) begin
         if (rst) begin
             pc <= `RV32E_MEMBASE;
-			instruction <= 0;
         end else begin
             if (jump_sig) begin
 				if(jump_addr == pc) begin
@@ -26,12 +26,16 @@ module RV32E_IFU(
 					$display("stop simulation by DPI-C");
 				end
                 pc <= jump_addr;
+				instruction <= 0;
             end else begin
                 pc <= pc + `RV32E_WIDTH'h0000_0004;
-            end
+				instruction <= mem_read(pc, 4);
+			end
+			ir_pc <= pc;
         end
     end
 
-    assign pc_count = pc;
+    assign pc_count = ir_pc;
+	assign INST = instruction;
 
 endmodule

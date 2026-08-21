@@ -14,6 +14,8 @@ uint64_t wave_count = 0;
 
 void cpu_reset(){
 	top->rst = 1; top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//初始复位
+	top->clk = 1; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)
+	top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)
 	top->clk = 1; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)					//释放复位
 	top->clk = 0; top->rst = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//解除复位
 }
@@ -38,8 +40,9 @@ int main(int argc, char** argv){
 #endif
 
 	//initialize NPC
-	cpu_reset();
+	
 	npc_init(argc, argv);
+	cpu_reset();
 	std::cout << "NPC复位完成, 可以开始运行" << std::endl;
 
 	npc_sdb_mainloop();
