@@ -75,6 +75,7 @@ extern "C" word_t pmem_read(paddr_t addr, int len){
         word_t ret = host_read(guest_to_host(addr), len);
         return ret;
     }else if(is_io_device(addr)){
+//		printf(ANSI_FG_RED"read device address = %08x , pc: %08x" ANSI_NONE "\n", addr, top->PC);
 		return io_device_read(addr, len);
 	}else{
 //		printf(ANSI_FG_RED"address = %08x out of bound of memory, pc: %08x" ANSI_NONE "\n", addr, top->PC);
@@ -92,8 +93,10 @@ void vmem_write(vaddr_t addr, int len, word_t data){
 }
 
 extern "C" word_t mem_read(vaddr_t addr, int len){
-	IFDEF(CONFIG_NPC_MTRACE, printf("memory read at address: 0x%08x\n",addr);)
-    return vmem_read(addr, len);
+	word_t ret = vmem_read(addr, len);							//等不用了记得改回去
+	IFDEF(CONFIG_NPC_MTRACE, printf("memory read at address: 0x%08x , ret: 0x%08x\n",addr, ret);)
+	return ret;
+//	return vmem_read(addr, len);
 }
 
 extern "C" void mem_write(vaddr_t addr, int len, word_t data){

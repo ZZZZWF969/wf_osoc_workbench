@@ -24,7 +24,7 @@ void trace_and_difftest(){
 void exec_once(){
 //	top->INST = vmem_read(top->PC, 4);		//取指
 	top->clk = 1; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉高
-	IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_irpc, top_inst);)
+	IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_pc, top_inst);)
 	//仿真结束逻辑
 	if(Verilated::gotFinish()){
 		npctrap(top->PC, top_gpr[10]);
@@ -54,8 +54,8 @@ extern "C" void execute(uint64_t n){
 			IFDEF(CONFIG_NPC_ITRACE, itrace_display();)
 			break;
 		}
-		exec_once();
-		if(is_io_device(top->RAM_ADDR)){
+		exec_once();					//等不用了记得改回去
+		if(is_io_device(top->RAM_ADDR) && top->RAM_ADDR!=KBD_ADDR ){
 			// std::cout<<"skip difftest"<<std::endl;
 			IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
 		}else{
