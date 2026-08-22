@@ -9,6 +9,9 @@
 #include <string.h>
 #include "include/device.h"
 
+int FIFO_read_allow = 0;
+extern int FIFO_read_allow;
+
 extern void sim_finish();
 extern void halt();
 
@@ -17,13 +20,38 @@ void itrace_display();
 void difftest_step(vaddr_t pc);
 void npctrap(word_t halt_pc, word_t halt_ret);
 
+void difftest_skip_ref();
+
 void trace_and_difftest(){
-	IFDEF(CONFIG_NPC_DIFFTEST, difftest_step(top->PC);)
+	IFDEF(CONFIG_NPC_DIFFTEST, difftest_step(top_irpc);)
+}
+
+// 周期外设任务：键盘用拍数节流（每 1000 拍 poll 一次，≈0.1~1ms 延迟，开销小），
+// VGA 用 60Hz 真实时间节流（帧率稳定，get_time 仅在 poll 分支执行）
+void poll_sdl_events();
+void vga_update_screen();
+
+static void device_update(){
+	static uint64_t poll_counter = 0;
+	if(++poll_counter % 1000 != 0) return;
+	poll_sdl_events();
+	static uint64_t last = 0;
+	uint64_t now = get_time();
+	if(now - last >= 1000000 / 60){
+		last = now;
+		vga_update_screen();
+	}
 }
 
 void exec_once(){
 //	top->INST = vmem_read(top->PC, 4);		//取指
-	top->clk = 1; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉高
+	device_update();
+	top->clk = 1;
+	// 修改：授权只给"本拍真实执行 load 指令"的拍——时序取指下 posedge 锁存下一条后
+	// IDU 会立即重算（nba 阶段），若下一条是 LW 会提前触发 kbd_read 消费，必须用本拍指令判断
+	// 原：FIFO_read_allow = 1;
+	FIFO_read_allow = ((top_inst & 0x7f) == 0x03) ? 1 : 0;
+	top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉高
 	IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_irpc, top_inst);)
 	//仿真结束逻辑
 	if(Verilated::gotFinish()){
@@ -33,12 +61,16 @@ void exec_once(){
 		<<std::endl;
 		return;
 	}
+		// if(is_io_device(top->RAM_ADDR)){
+		// 	// std::cout<<"skip difftest"<<std::endl;
+		// 	IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
+		// }else{
+		// 	trace_and_difftest();
+		// }
 	top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉低
 	IFDEF(CONFIG_NPC_WATCHPOINT, watchpoint_difftest();)
 	return;
 }
-
-void difftest_skip_ref();
 
 extern "C" void execute(uint64_t n){
 

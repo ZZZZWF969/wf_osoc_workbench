@@ -35,9 +35,13 @@ static int key_queue[KEY_QUEUE_LEN] = {};
 static int key_f = 0, key_r = 0;
 
 static void key_enqueue(uint32_t am_scancode){
-  key_queue[key_r] = am_scancode;
-  key_r = (key_r + 1) % KEY_QUEUE_LEN;
-  assert(key_r != key_f);   // 队列写满即溢出，属于异常情况
+	// 修改：周期轮询可能一次入队多个事件，队列满时丢弃最旧的事件，避免 assert 崩溃
+	// 原：assert(key_r != key_f);
+	if((key_r + 1) % KEY_QUEUE_LEN == key_f){
+		key_f = (key_f + 1) % KEY_QUEUE_LEN;
+	}
+	key_queue[key_r] = am_scancode;
+	key_r = (key_r + 1) % KEY_QUEUE_LEN;
 }
 
 static uint32_t key_dequeue(){
@@ -50,7 +54,8 @@ static uint32_t key_dequeue(){
 }
 
 // 轮询 SDL 的事件队列，把键盘事件翻译成 AM 事件存入环形队列。
-static void poll_sdl_events(){
+// 修改：去掉 static，改为由仿真主循环的 device_update() 周期调用（事件实时入队，与 guest 读取解耦）
+void poll_sdl_events(){
   SDL_Event event;
   while (SDL_PollEvent(&event)){
     switch (event.type) {
@@ -87,8 +92,17 @@ void init_keyboard(){
 	init_keymap();
 }
 
-// guest 读键盘寄存器时的入口：先轮询一遍 SDL 事件，再从队列取一个事件返回
+extern int FIFO_read_allow;
+static word_t key;
+
+// guest 读键盘寄存器时的入口：只从队列取事件（SDL 事件由 device_update 周期轮询入队）
 word_t kbd_read(){
-  poll_sdl_events();
-  return key_dequeue();
+	// 修改：poll 移出（改由 device_update 周期调用），这里只保留拍内防御 + dequeue
+	// poll_sdl_events();
+	if(FIFO_read_allow){
+		key = key_dequeue();
+		FIFO_read_allow = 0;
+	}
+	return key;
+  //   return key_dequeue();
 }
