@@ -58,7 +58,7 @@ bool isa_check_reg(CPU_state *ref_r, vaddr_t pc){
 static void checkreg(CPU_state *ref_r, vaddr_t pc){
 	if(!isa_check_reg(ref_r, pc)){
 		npc_state.state = NPC_ABORT;
-		npc_state.state = pc;
+		npc_state.halt_pc = pc;
 	}
 }
 

@@ -6,6 +6,8 @@ static uint32_t *fb = NULL;
 static uint32_t vgactl_reg[2];   // [0] 分辨率配置(只读) [1] sync(guest 写 1 请求刷新)
 static SDL_Renderer *renderer = NULL;
 static SDL_Texture *texture = NULL;
+// 修改：新增脏标记，guest 写 sync 只置位，渲染由 device_update 周期执行（vga_update_screen）
+static bool vga_dirty = false;
 
 void init_vga(){
 	// 初始化 SDL 窗口
@@ -41,13 +43,22 @@ void vgactl_write(paddr_t addr, int len, word_t data){
 	if (addr - VGACTL_ADDR == 4){   // sync 寄存器：guest 写 1 请求刷新
 		vgactl_reg[1] = data;
 		if (vgactl_reg[1]){
-			// 惰性刷新：把帧缓冲送上屏幕，然后清 sync（与 NEMU 语义一致）
-			SDL_UpdateTexture(texture, NULL, fb, VGA_W * sizeof(uint32_t));
-			SDL_RenderClear(renderer);
-			SDL_RenderCopy(renderer, texture, NULL, NULL);
-			SDL_RenderPresent(renderer);
-			vgactl_reg[1] = 0;
+			// 修改：不再在 DPI-C 里立即渲染，只置脏标记（渲染由 device_update 周期执行）
+			vga_dirty = true;
 		}
+	}
+}
+
+// 修改：新增周期渲染函数（由 device_update 调用），把 SDL 渲染移出模拟关键路径
+void vga_update_screen(){
+	if(vga_dirty){
+		vga_dirty = false;
+		// 把帧缓冲送上屏幕，然后清 sync（与 NEMU 语义一致）
+		SDL_UpdateTexture(texture, NULL, fb, VGA_W * sizeof(uint32_t));
+		SDL_RenderClear(renderer);
+		SDL_RenderCopy(renderer, texture, NULL, NULL);
+		SDL_RenderPresent(renderer);
+		vgactl_reg[1] = 0;
 	}
 }
 
