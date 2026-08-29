@@ -1,6 +1,7 @@
 #include "include/npcpp.hpp"
 #include <iostream>
 
+void itrace_inst(word_t pc, uint32_t inst);
 void npc_sdb_mainloop();
 void npc_init(int argc, char *argv[]);
 void memory_not_use();
@@ -17,6 +18,7 @@ void cpu_reset(){
 	top->clk = 1; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)
 	top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)
 	top->clk = 1; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)					//释放复位
+	IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_pc, top_inst);)
 	top->clk = 0; top->rst = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//解除复位
 }
 

@@ -2,12 +2,12 @@ mainmenu "NPC Configuration"
 
 config NPC_TRACE
 	bool "Enable tracer"
-	default y
+	default n
 
 config NPC_ITRACE
 	depends on NPC_TRACE
 	bool "Enable instruction tracer"
-	default y
+	default n
 
 config NPC_MTRACE
 	depends on NPC_TRACE
@@ -16,12 +16,12 @@ config NPC_MTRACE
 
 config NPC_WAVE
 	bool "Enable waveform"
-	default y
+	default n
 
 config NPC_DIFFTEST
 	bool "Enable difftest"
-	default y
+	default n
 
 config NPC_WATCHPOINT
 	bool "Enable watchpoint"
-	default y
+	default n

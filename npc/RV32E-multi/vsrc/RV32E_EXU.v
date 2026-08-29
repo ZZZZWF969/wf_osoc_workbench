@@ -9,6 +9,7 @@ module RV32E_EXU(
 	input	[`RV32E_WIDTH-1:0]	csr_rdata,
     input   [5:0]       op,
 	output	reg			con_jump,
+	output	reg	[`RV32E_WIDTH-1:0]	jump_addr,	//跳转目标地址，与跳转信号一起走WBU节拍
 	output	reg			half_write,
 	output	reg			byte_write,
 	output	reg	[15:0]	mem_half_data,
@@ -53,6 +54,7 @@ module RV32E_EXU(
 
 		mem_addr = 0; reg_write_data = 0; mem_write_data = 0; csr_write_data = 0;
 		mem_half_data = 0; half_write = 0; byte_write = 0; mem_byte = 0; con_jump = 0;
+		jump_addr = 0;
 		use_pc_src1 = 0; use_imm_src2 = 0; cmp_imm = 0; use_csr_src2 = 0;
 		alu_op = `ALU_ADD;
 
@@ -74,10 +76,12 @@ module RV32E_EXU(
 				use_pc_src1 = 1; use_imm_src2 = 1;
 				reg_write_data = pc + 4;
 				mem_addr = alu_result;
+				jump_addr = alu_result;
 			end
 			`JALR: begin
 				use_imm_src2 = 1;
 				mem_addr = alu_result;
+				jump_addr = alu_result;
 				reg_write_data = pc + 4;
 			end
 			`SW: begin
@@ -141,37 +145,37 @@ module RV32E_EXU(
 			`BLT: begin
 				use_pc_src1 = 1; use_imm_src2 = 1;
 				if(alu_slt) begin
-					con_jump = 1; mem_addr = alu_result;
+					con_jump = 1; mem_addr = alu_result; jump_addr = alu_result;
 				end
 			end
 			`BLTU: begin
 				use_pc_src1 = 1; use_imm_src2 = 1;
 				if(alu_sltu) begin
-					con_jump = 1; mem_addr = alu_result;
+					con_jump = 1; mem_addr = alu_result; jump_addr = alu_result;
 				end
 			end
 			`BEQ: begin
 				use_pc_src1 = 1; use_imm_src2 = 1;
 				if(alu_zero) begin
-					con_jump = 1; mem_addr = alu_result;
+					con_jump = 1; mem_addr = alu_result; jump_addr = alu_result;
 				end
 			end
 			`BNE: begin
 				use_pc_src1 = 1; use_imm_src2 = 1;
 				if(!alu_zero) begin
-					con_jump = 1; mem_addr = alu_result;
+					con_jump = 1; mem_addr = alu_result; jump_addr = alu_result;
 				end
 			end
 			`BGE: begin
 				use_pc_src1 = 1; use_imm_src2 = 1;
 				if(!alu_slt) begin
-					con_jump = 1; mem_addr = alu_result;
+					con_jump = 1; mem_addr = alu_result; jump_addr = alu_result;
 				end
 			end
 			`BGEU: begin
 				use_pc_src1 = 1; use_imm_src2 = 1;
 				if(!alu_sltu) begin
-					con_jump = 1; mem_addr = alu_result;
+					con_jump = 1; mem_addr = alu_result; jump_addr = alu_result;
 				end
 			end
 			`OR: begin
@@ -222,7 +226,6 @@ module RV32E_EXU(
 				use_imm_src2 = 1; alu_op = `ALU_SRA;
 				reg_write_data = alu_result;
 			end
-			//TODO
 			`CSRRW: begin
 				reg_write_data = csr_rdata;
 				csr_write_data = reg_data_0;
@@ -234,9 +237,11 @@ module RV32E_EXU(
 			end
 			`MRET: begin
 				mem_addr = csr_rdata;
+				jump_addr = csr_rdata;
 			end
 			`ECALL: begin
 				mem_addr = csr_rdata;
+				jump_addr = csr_rdata;
 			end
 
 			default: begin end

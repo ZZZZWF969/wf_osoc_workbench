@@ -1,6 +1,7 @@
 `include "RV32E.vh"
 
 module RV32E_IDU(
+//	input					clk,
 	input	[`RV32E_WIDTH-1:0]	inst,
 	output	reg				mem_wen,
 	output	reg				mem_ren,
@@ -16,8 +17,27 @@ module RV32E_IDU(
 	output	reg				reg_wen,
 	output			[4:0]	rwrd,
 	output	reg	[`RV32E_WIDTH-1:0]	imm,
-	output	reg [5:0]		EXU_OP			//magic number
+	output	reg [5:0]		EXU_OP,			//magic number
+
+	//总线接口
+	input					valid,
+	output		reg			ready
 );
+
+	assign ready = 1;
+	reg [`RV32E_WIDTH-1:0] instruction;
+
+	always @(*) begin
+		instruction = 0;
+		if(valid) begin
+			instruction = inst;
+		end
+	end
+	// always @(posedge clk) begin
+	// 	if(valid) begin
+	// 		instruction <= inst;
+	// 	end
+	// end
 
 	wire [`RV32E_WIDTH-1:0]   immI;
 	wire [`RV32E_WIDTH-1:0]   immJ;
@@ -29,18 +49,18 @@ module RV32E_IDU(
 	wire [6:0]			funct7;
     wire [6:0]          opcode;
 
-    assign funct3 = inst[14:12];
-	assign funct7 = inst[31:25];
-    assign rs1_addr  = inst[19:15];
-    assign rs2_addr  = inst[24:20];
-    assign rwrd   = inst[11: 7];
-    assign opcode = inst[6:0];
+    assign funct3 = instruction[14:12];
+	assign funct7 = instruction[31:25];
+    assign rs1_addr  = instruction[19:15];
+    assign rs2_addr  = instruction[24:20];
+    assign rwrd   = instruction[11: 7];
+    assign opcode = instruction[6:0];
 
-    assign immI = {{20{inst[31]}},{inst[31:20]}};	//I立即数
-	assign immJ = {{12{inst[31]}},{inst[19:12]},{inst[20]},{inst[30:21]},1'b0};	//J立即数
-	assign immU = {inst[31:12],12'b0};				//U立即数
-	assign immS = {{20{inst[31]}},inst[31:25],inst[11:7]};	//S立即数
-	assign immB = {{20{inst[31]}},inst[7],inst[30:25],inst[11:8],1'b0};	//B立即数
+    assign immI = {{20{instruction[31]}},{instruction[31:20]}};	//I立即数
+	assign immJ = {{12{instruction[31]}},{instruction[19:12]},{instruction[20]},{instruction[30:21]},1'b0};	//J立即数
+	assign immU = {instruction[31:12],12'b0};				//U立即数
+	assign immS = {{20{instruction[31]}},instruction[31:25],instruction[11:7]};	//S立即数
+	assign immB = {{20{instruction[31]}},instruction[7],instruction[30:25],instruction[11:8],1'b0};	//B立即数
 
 
 	import "DPI-C" function void sim_finish();
@@ -51,10 +71,10 @@ module RV32E_IDU(
 		EXU_OP = `EXU_DEFAULT; imm = 0;	uncon_jump = 0; trap = 0; mret = 0;
 		csr_wen = 0; csr_ren = 0; csr_wrd = 0; csr_rrd = 0;
 
-		// if(inst == 32'h0010_0073) begin
+		// if(instruction == 32'h0010_0073) begin
 		// 	sim_finish();
 		// end
-		// if(inst == 32'h3020_0073) begin
+		// if(instruction == 32'h3020_0073) begin
 		// 	EXU_OP = `MRET; mret = 1;
 		// 	csr_rrd = `MEPC;
 		// end
@@ -130,18 +150,18 @@ module RV32E_IDU(
 
 		//CSR INST
 		if(opcode == 7'b1110011) begin
-			if(inst == 32'h0010_0073) begin
+			if(instruction == 32'h0010_0073) begin
 				sim_finish();
-			end else if(inst == 32'h3020_0073) begin
+			end else if(instruction == 32'h3020_0073) begin
 				EXU_OP = `MRET; mret = 1;
 				csr_rrd = `MEPC; csr_ren = 1;
-			end else if(inst == 32'h0000_0073) begin
+			end else if(instruction == 32'h0000_0073) begin
 				EXU_OP = `ECALL; trap = 1; csr_rrd = `MTVEC; csr_ren = 1;
 			end else if(funct3 == 3'b001) begin
-				EXU_OP = `CSRRW; csr_wrd = inst[31:20]; csr_rrd = inst[31:20];
+				EXU_OP = `CSRRW; csr_wrd = instruction[31:20]; csr_rrd = instruction[31:20];
 				csr_wen = 1; reg_wen = 1; csr_ren = 1;
 			end else if(funct3 == 3'b010) begin
-				EXU_OP = `CSRRS; csr_wrd = inst[31:20]; csr_rrd = inst[31:20];
+				EXU_OP = `CSRRS; csr_wrd = instruction[31:20]; csr_rrd = instruction[31:20];
 				csr_wen = 1; reg_wen = 1; csr_ren = 1;
 			end
 			// case (funct3)

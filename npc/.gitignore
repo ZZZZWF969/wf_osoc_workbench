@@ -15,6 +15,7 @@
 !build.sc
 !README.md
 build/
+lyx/
 
 # mill
 out/

@@ -20,7 +20,6 @@ module RV32E_MEM(
 		read_data = 0;
 		if(read_en)begin
 			read_data = mem_read(address, 4);
-			$display(read_data);
 		end
 	end
 
