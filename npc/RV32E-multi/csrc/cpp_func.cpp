@@ -49,7 +49,9 @@ void exec_once(){
 	top->clk = 1;
 	// 修改：授权只给"本拍真实执行 load 指令"的拍——时序取指下 posedge 锁存下一条后
 	// IDU 会立即重算（nba 阶段），若下一条是 LW 会提前触发 kbd_read 消费，必须用本拍指令判断
-	FIFO_read_allow = ((top_inst & 0x7f) == 0x03) ? 1 : 0;
+	// FIFO_read_allow = ((top_inst & 0x7f) == 0x03) ? 1 : 0;	//修改（键盘问题修复）：多周期下一条load占据INST寄存器4拍，原判定在ID锁存拍与EX锁存拍各授权一次，kbd_read双重dequeue吞掉按键事件
+	//修改（键盘问题修复）：加if_valid门控，授权收窄到指令首次呈现拍（SEND拍），保证每条load只dequeue一次
+	FIFO_read_allow = (top_if_valid && ((top_inst & 0x7f) == 0x03)) ? 1 : 0;
 	top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉高
 	IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_pc, top_inst);)
 	//仿真结束逻辑

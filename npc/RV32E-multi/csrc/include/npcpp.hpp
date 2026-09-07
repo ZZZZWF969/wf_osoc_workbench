@@ -12,6 +12,7 @@
 #define top_pc top->rootp->RV32E_CPU__DOT__IFU__DOT__pc
 //#define top_irpc top->rootp->RV32E_CPU__DOT__IFU__DOT__ir_pc
 #define top_inst top->rootp->RV32E_CPU__DOT__IFU__DOT__INST
+#define top_if_valid top->rootp->RV32E_CPU__DOT__IFU__DOT__if_valid
 
 extern uint64_t wave_count;
 extern VerilatedVcdC* tfp;
