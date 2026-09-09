@@ -18,7 +18,9 @@ void cpu_reset(){
 	top->clk = 1; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)
 	top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)
 	top->clk = 1; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)					//释放复位
-	IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_pc, top_inst);)
+	//修改（多周期适配）：注释掉复位时的itrace记录——此刻INST还是复位值0，会记出
+	//(0x80000000, 0x00000000)的假条目（反汇编为unknown）；首条指令由exec_once退休拍正确记录
+	//IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_pc, top_inst);)
 	top->clk = 0; top->rst = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//解除复位
 }
 

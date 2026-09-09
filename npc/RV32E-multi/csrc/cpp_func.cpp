@@ -19,6 +19,7 @@ void itrace_inst(word_t pc, uint32_t inst);
 void itrace_display();
 void difftest_step(vaddr_t pc);
 void npctrap(word_t halt_pc, word_t halt_ret);
+void mtrace_retire_print();
 
 void difftest_skip_ref();
 
@@ -44,33 +45,77 @@ static void device_update(){
 }
 
 void exec_once(){
+//修改（多周期适配）：原函数体"一次调用走一个时钟周期"基于单周期假设（1周期=1指令），
+//多周期RTL下一条指令占IF/ID/EX/WB共4拍，原实现导致itrace重复记录、difftest四倍速跑飞。
+//重定义为"驱动时钟直至本条指令退休或仿真结束"，恢复"1次exec_once=1条指令"的契约，
+//si/difftest/itrace等监视调用结构随之自动恢复正确。原函数体整体注释保留如下：
 //	top->INST = vmem_read(top->PC, 4);		//取指
-	device_update();
-	top->clk = 1;
-	// 修改：授权只给"本拍真实执行 load 指令"的拍——时序取指下 posedge 锁存下一条后
-	// IDU 会立即重算（nba 阶段），若下一条是 LW 会提前触发 kbd_read 消费，必须用本拍指令判断
-	// FIFO_read_allow = ((top_inst & 0x7f) == 0x03) ? 1 : 0;	//修改（键盘问题修复）：多周期下一条load占据INST寄存器4拍，原判定在ID锁存拍与EX锁存拍各授权一次，kbd_read双重dequeue吞掉按键事件
-	//修改（键盘问题修复）：加if_valid门控，授权收窄到指令首次呈现拍（SEND拍），保证每条load只dequeue一次
-	FIFO_read_allow = (top_if_valid && ((top_inst & 0x7f) == 0x03)) ? 1 : 0;
-	top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉高
-	IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_pc, top_inst);)
-	//仿真结束逻辑
-	if(Verilated::gotFinish()){
-		npctrap(top->PC, top_gpr[10]);
-		std::cout<<std::string(ANSI_FG_YELLOW)+"get finish signal by DPI-C at PC=0x"
-		<<std::hex<<top->PC<<std::string(ANSI_NONE)
-		<<std::endl;
-		return;
+//	device_update();
+//	top->clk = 1;
+//	// 修改：授权只给"本拍真实执行 load 指令"的拍——时序取指下 posedge 锁存下一条后
+//	// IDU 会立即重算（nba 阶段），若下一条是 LW 会提前触发 kbd_read 消费，必须用本拍指令判断
+//	// FIFO_read_allow = ((top_inst & 0x7f) == 0x03) ? 1 : 0;	//修改（键盘问题修复）：多周期下一条load占据INST寄存器4拍，原判定在ID锁存拍与EX锁存拍各授权一次，kbd_read双重dequeue吞掉按键事件
+//	//修改（键盘问题修复）：加if_valid门控，授权收窄到指令首次呈现拍（SEND拍），保证每条load只dequeue一次
+//	FIFO_read_allow = (top_if_valid && ((top_inst & 0x7f) == 0x03)) ? 1 : 0;
+//	top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉高
+//	IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_pc, top_inst);)		//修改（多周期适配）：itrace移至下方退休拍（每拍记录会同指令重复3次且PC错配）
+//	//仿真结束逻辑
+//	if(Verilated::gotFinish()){
+//		npctrap(top->PC, top_gpr[10]);
+//		std::cout<<std::string(ANSI_FG_YELLOW)+"get finish signal by DPI-C at PC=0x"
+//		<<std::hex<<top->PC<<std::string(ANSI_NONE)
+//		<<std::endl;
+//		return;
+//	}
+//		// if(is_io_device(top->RAM_ADDR)){
+//		// 	// std::cout<<"skip difftest"<<std::endl;
+//		// 	IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
+//		// }else{
+//		// 	trace_and_difftest();
+//		// }
+//	top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉低
+//	IFDEF(CONFIG_NPC_WATCHPOINT, watchpoint_difftest();)
+//	return;
+
+	//内层循环：逐拍驱动时钟，直到本条指令退休（WB提交沿）或仿真结束
+	while(1){
+		device_update();
+		//授权逻辑不变（键盘问题修复）：只在load指令首次呈现拍（SEND拍）授权一次dequeue
+		FIFO_read_allow = (top_if_valid && ((top_inst & 0x7f) == 0x03)) ? 1 : 0;
+		//posedge前快照：ex_valid=1表示本沿是WB提交沿（退休沿），拍末GPR/CSR/store提交、pc更新
+		bool will_retire = top_ex_valid;
+		//MMIO判定限load/store（RAM_ADDR=EXU组合地址，对跳转类=目标地址、非访存指令=残留值，须过滤）
+		bool retire_is_mmio = will_retire && is_io_device(top->RAM_ADDR)
+			&& (((top_inst & 0x7f) == 0x03) || ((top_inst & 0x7f) == 0x23));
+		top->clk = 1; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉高
+		if(will_retire){
+			//退休拍统一监视点：此刻GPR/CSR/store已提交，top_pc=下一条地址，ir_pc/INST
+			//仍是本条指令，mtrace捕获区必属本条指令（读发生在退休沿前，store写在退休沿内）
+			IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_ir_pc, top_inst);)
+			IFDEF(CONFIG_NPC_MTRACE, mtrace_retire_print();)
+			if(retire_is_mmio){
+				IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)	//MMIO访问：DUT状态回拷REF，跳过比对
+			}else{
+				trace_and_difftest();					//普通指令：REF推一条并比对（top_pc已=下一条地址）
+			}
+		}
+		//仿真结束逻辑
+		if(Verilated::gotFinish()){
+			//ebreak在ID拍停机等不到退休沿，此处补记本条指令（本拍已退休则不重复记）
+			if(!will_retire){
+				IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_ir_pc, top_inst);)
+			}
+			npctrap(top->PC, top_gpr[10]);
+			std::cout<<std::string(ANSI_FG_YELLOW)+"get finish signal by DPI-C at PC=0x"
+			<<std::hex<<top->PC<<std::string(ANSI_NONE)
+			<<std::endl;
+			top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//补完negedge：clk收低、波形完整
+			return;
+		}
+		top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉低
+		IFDEF(CONFIG_NPC_WATCHPOINT, watchpoint_difftest();)	//逐拍检查；NPC_STOP不作循环出口，退休沿自然停在指令边界
+		if(will_retire) return;		//本条指令已退休且本拍走完：1次exec_once=1条指令
 	}
-		// if(is_io_device(top->RAM_ADDR)){
-		// 	// std::cout<<"skip difftest"<<std::endl;
-		// 	IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
-		// }else{
-		// 	trace_and_difftest();
-		// }
-	top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉低
-	IFDEF(CONFIG_NPC_WATCHPOINT, watchpoint_difftest();)
-	return;
 }
 
 extern "C" void execute(uint64_t n){
@@ -88,12 +133,13 @@ extern "C" void execute(uint64_t n){
 			break;
 		}
 		exec_once();					//等不用了记得改回去
-		if(is_io_device(top->RAM_ADDR) /*&& top->RAM_ADDR!=KBD_ADDR*/ ){
-			// std::cout<<"skip difftest"<<std::endl;
-			IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
-		}else{
-			trace_and_difftest();
-		}
+		//修改（多周期适配）：difftest已移回exec_once退休拍触发（此处逐拍触发会使REF四倍速跑飞）
+		// if(is_io_device(top->RAM_ADDR) /*&& top->RAM_ADDR!=KBD_ADDR*/ ){
+		// 	// std::cout<<"skip difftest"<<std::endl;
+		// 	IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
+		// }else{
+		// 	trace_and_difftest();
+		// }
 	}
 	
 	//HIT GOOD/BAD TRAP
