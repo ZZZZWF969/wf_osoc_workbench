@@ -8,16 +8,13 @@ module RV32E_IDU(
 	input	[`RV32E_WIDTH-1:0]	inst,
 	input	[`RV32E_WIDTH-1:0]	pc,			//ir_pc，当前指令地址
 	output	reg				if_ready,
-	//总线：与EXU握手
+	//总线：与读取单元握手
 	input					id_ready,
 	output	reg				id_valid,
-	//ID_reg锁存输出（去往EXU）
+	//ID_reg锁存输出（去往读取单元）
 	output	reg [5:0]		id_exu_op,
-	output	reg	[`RV32E_WIDTH-1:0]	id_rs1_data,
-	output	reg	[`RV32E_WIDTH-1:0]	id_rs2_data,
 	output	reg	[`RV32E_WIDTH-1:0]	id_imm,
 	output	reg	[`RV32E_WIDTH-1:0]	id_pc,
-	output	reg	[`RV32E_WIDTH-1:0]	id_csr_rdata,
 	output	reg [4:0]		id_rwrd,
 	output	reg				id_reg_wen,
 	output	reg				id_csr_wen,
@@ -26,15 +23,11 @@ module RV32E_IDU(
 	output	reg				id_mret,
 	output	reg				id_uncon_jump,
 	output	reg				id_mem_ren,		//load指令
-	//寄存器堆读口（组合直出，译码拍有效）
-	output		[4:0]	rs1_addr,
-	output		[4:0]	rs2_addr,
-	input	[`RV32E_WIDTH-1:0]	read_data_1,
-	input	[`RV32E_WIDTH-1:0]	read_data_2,
-	//CSR读口（组合直出，译码拍读）
-	output	reg				csr_ren,
-	output	reg [11:0]		csr_rrd,
-	input	[`RV32E_WIDTH-1:0]	csr_rdata
+	//读地址（锁存输出，去往读取单元驱动寄存器堆/CSR读口）
+	output	reg [4:0]		id_rs1_addr,
+	output	reg [4:0]		id_rs2_addr,
+	output	reg				id_csr_ren,
+	output	reg [11:0]		id_csr_rrd
 );
 
 	import "DPI-C" function void sim_finish();
@@ -52,9 +45,6 @@ module RV32E_IDU(
 	reg					deco_uncon_jump;
 	reg					deco_mem_ren;
 	reg					deco_ebreak;
-
-	assign rs1_addr = inst[19:15];
-	assign rs2_addr = inst[24:20];
 
 	wire [2:0]  funct3;
 	wire [6:0]  funct7;
@@ -253,10 +243,6 @@ module RV32E_IDU(
 				default: begin end
 			endcase
 		end
-
-		//CSR读口直出：与译码结果同源
-		csr_ren = deco_csr_ren;
-		csr_rrd = deco_csr_rrd;
 	end
 
 	//握手拍：if_valid与if_ready同时有效时，组合译码结果与读出的寄存器/CSR数据一起锁存进ID_reg
@@ -265,22 +251,20 @@ module RV32E_IDU(
 			if_ready <= 1;
 			id_valid <= 0;
 			id_exu_op <= `EXU_DEFAULT;
-			id_rs1_data <= 0; id_rs2_data <= 0;
-			id_imm <= 0; id_pc <= 0; id_csr_rdata <= 0;
+			id_imm <= 0; id_pc <= 0;
 			id_rwrd <= 0;
 			id_reg_wen <= 0; id_csr_wen <= 0; id_csr_wrd <= 0;
 			id_trap <= 0; id_mret <= 0; id_uncon_jump <= 0;
 			id_mem_ren <= 0;
+			id_rs1_addr <= 0; id_rs2_addr <= 0;
+			id_csr_ren <= 0; id_csr_rrd <= 0;
 		end else if(if_valid && if_ready) begin
 			if(deco_ebreak) begin
 				sim_finish();
 			end
 			id_exu_op <= deco_exu_op;
-			id_rs1_data <= read_data_1;
-			id_rs2_data <= read_data_2;
 			id_imm <= deco_imm;
 			id_pc <= pc;
-			id_csr_rdata <= csr_rdata;
 			id_rwrd <= inst[11:7];
 			id_reg_wen <= deco_reg_wen;
 			id_csr_wen <= deco_csr_wen;
@@ -289,17 +273,22 @@ module RV32E_IDU(
 			id_mret <= deco_mret;
 			id_uncon_jump <= deco_uncon_jump;
 			id_mem_ren <= deco_mem_ren;
+			//读地址随译码一起锁存，供读取单元下一拍驱动寄存器堆/CSR读口
+			id_rs1_addr <= inst[19:15];
+			id_rs2_addr <= inst[24:20];
+			id_csr_ren <= deco_csr_ren;
+			id_csr_rrd <= deco_csr_rrd;
 			id_valid <= 1;
 			if_ready <= 0;
 		end else if(id_valid && id_ready) begin
-			//EXU已接收ID_reg，恢复空闲
+			//读取单元已接收ID_reg，恢复空闲
 			id_valid <= 0;
 			if_ready <= 1;
 		end
 	end
 
-	//原译码输出直连各执行/写回模块，译码与执行处于同一周期；
-	//多周期化后译码结果统一在握手拍锁存进ID_reg，下一拍交EXU执行，
-	//sim_finish(ebreak)亦由组合调用改为握手拍时序调用一次
+	//原IDU在译码拍同时组合读寄存器堆/CSR并锁存读数据；
+	//新增读取周期后，译码拍只锁存控制信号与读地址(ID_reg)，
+	//读数据由读取单元(RV32E_RDU)在下一拍读出并锁存(READ_reg)
 
 endmodule

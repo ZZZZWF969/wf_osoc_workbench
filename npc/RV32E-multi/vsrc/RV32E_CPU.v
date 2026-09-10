@@ -21,15 +21,12 @@ module RV32E_CPU(
 	wire					jump_sig;
 	wire	[`RV32E_WIDTH-1:0]	jump_addr;
 
-	//IDU-EXU总线（ID_reg内容）
+	//IDU-RDU总线（ID_reg内容：控制信号+读地址）
 	wire					id_valid;
 	wire					id_ready;
 	wire	[5:0]			id_exu_op;
-	wire	[`RV32E_WIDTH-1:0]	id_rs1_data;
-	wire	[`RV32E_WIDTH-1:0]	id_rs2_data;
 	wire	[`RV32E_WIDTH-1:0]	id_imm;
 	wire	[`RV32E_WIDTH-1:0]	id_pc;
-	wire	[`RV32E_WIDTH-1:0]	id_csr_rdata;
 	wire	[4:0]			id_rwrd;
 	wire					id_reg_wen;
 	wire					id_csr_wen;
@@ -38,6 +35,28 @@ module RV32E_CPU(
 	wire					id_mret;
 	wire					id_uncon_jump;
 	wire					id_mem_ren;
+	wire	[4:0]			id_rs1_addr;
+	wire	[4:0]			id_rs2_addr;
+	wire					id_csr_ren;
+	wire	[11:0]			id_csr_rrd;
+
+	//RDU-EXU总线（READ_reg内容：操作数+控制信号）
+	wire					read_valid;
+	wire					read_ready;
+	wire	[`RV32E_WIDTH-1:0]	rd_rs1_data;
+	wire	[`RV32E_WIDTH-1:0]	rd_rs2_data;
+	wire	[`RV32E_WIDTH-1:0]	rd_imm;
+	wire	[`RV32E_WIDTH-1:0]	rd_pc;
+	wire	[`RV32E_WIDTH-1:0]	rd_csr_rdata;
+	wire	[5:0]			rd_exu_op;
+	wire	[4:0]			rd_rwrd;
+	wire					rd_reg_wen;
+	wire					rd_csr_wen;
+	wire	[11:0]			rd_csr_wrd;
+	wire					rd_trap;
+	wire					rd_mret;
+	wire					rd_uncon_jump;
+	wire					rd_mem_ren;
 
 	//EXU-WBU总线（EX_reg内容）
 	wire					ex_valid;
@@ -60,13 +79,13 @@ module RV32E_CPU(
 	wire					ex_mem_half_wen;
 	wire					ex_mem_byte_wen;
 
-	//寄存器堆读口
+	//寄存器堆读口（读取单元直出）
 	wire	[4:0]			rs1_addr;
 	wire	[4:0]			rs2_addr;
 	wire	[`RV32E_WIDTH-1:0]	read_data_0;
 	wire	[`RV32E_WIDTH-1:0]	read_data_1;
 
-	//CSR读口
+	//CSR读口（读取单元直出）
 	wire					csr_ren;
 	wire	[11:0]			csr_rrd;
 	wire	[`RV32E_WIDTH-1:0]	csr_rdata;
@@ -122,11 +141,8 @@ module RV32E_CPU(
 		.id_ready		(id_ready),
 		.id_valid		(id_valid),
 		.id_exu_op		(id_exu_op),
-		.id_rs1_data	(id_rs1_data),
-		.id_rs2_data	(id_rs2_data),
 		.id_imm			(id_imm),
 		.id_pc			(id_pc),
-		.id_csr_rdata	(id_csr_rdata),
 		.id_rwrd		(id_rwrd),
 		.id_reg_wen		(id_reg_wen),
 		.id_csr_wen		(id_csr_wen),
@@ -135,13 +151,55 @@ module RV32E_CPU(
 		.id_mret		(id_mret),
 		.id_uncon_jump	(id_uncon_jump),
 		.id_mem_ren		(id_mem_ren),
+		.id_rs1_addr	(id_rs1_addr),
+		.id_rs2_addr	(id_rs2_addr),
+		.id_csr_ren		(id_csr_ren),
+		.id_csr_rrd		(id_csr_rrd)
+	);
+
+	RV32E_RDU RDU(
+		.clk			(clk),
+		.rst			(rst),
+		.id_valid		(id_valid),
+		.id_ready		(id_ready),
+		.id_exu_op		(id_exu_op),
+		.id_imm			(id_imm),
+		.id_pc			(id_pc),
+		.id_rwrd		(id_rwrd),
+		.id_reg_wen		(id_reg_wen),
+		.id_csr_wen		(id_csr_wen),
+		.id_csr_wrd		(id_csr_wrd),
+		.id_trap		(id_trap),
+		.id_mret		(id_mret),
+		.id_uncon_jump	(id_uncon_jump),
+		.id_mem_ren		(id_mem_ren),
+		.id_rs1_addr	(id_rs1_addr),
+		.id_rs2_addr	(id_rs2_addr),
+		.id_csr_ren		(id_csr_ren),
+		.id_csr_rrd		(id_csr_rrd),
 		.rs1_addr		(rs1_addr),
 		.rs2_addr		(rs2_addr),
 		.read_data_1	(read_data_0),
 		.read_data_2	(read_data_1),
 		.csr_ren		(csr_ren),
 		.csr_rrd		(csr_rrd),
-		.csr_rdata		(csr_rdata)
+		.csr_rdata		(csr_rdata),
+		.read_ready		(read_ready),
+		.read_valid		(read_valid),
+		.rd_rs1_data	(rd_rs1_data),
+		.rd_rs2_data	(rd_rs2_data),
+		.rd_imm			(rd_imm),
+		.rd_pc			(rd_pc),
+		.rd_csr_rdata	(rd_csr_rdata),
+		.rd_exu_op		(rd_exu_op),
+		.rd_rwrd		(rd_rwrd),
+		.rd_reg_wen		(rd_reg_wen),
+		.rd_csr_wen		(rd_csr_wen),
+		.rd_csr_wrd		(rd_csr_wrd),
+		.rd_trap		(rd_trap),
+		.rd_mret		(rd_mret),
+		.rd_uncon_jump	(rd_uncon_jump),
+		.rd_mem_ren		(rd_mem_ren)
 	);
 
 	RV32E_REG_ARRAY REG_ARR(
@@ -172,22 +230,22 @@ module RV32E_CPU(
 	RV32E_EXU EXU(
 		.clk				(clk),
 		.rst				(rst),
-		.id_valid			(id_valid),
-		.id_ready			(id_ready),
-		.id_exu_op			(id_exu_op),
-		.id_rs1_data		(id_rs1_data),
-		.id_rs2_data		(id_rs2_data),
-		.id_imm				(id_imm),
-		.id_pc				(id_pc),
-		.id_csr_rdata		(id_csr_rdata),
-		.id_rwrd			(id_rwrd),
-		.id_reg_wen			(id_reg_wen),
-		.id_csr_wen			(id_csr_wen),
-		.id_csr_wrd			(id_csr_wrd),
-		.id_trap			(id_trap),
-		.id_mret			(id_mret),
-		.id_uncon_jump		(id_uncon_jump),
-		.id_mem_ren			(id_mem_ren),
+		.rd_valid			(read_valid),
+		.rd_ready			(read_ready),
+		.rd_exu_op			(rd_exu_op),
+		.rd_rs1_data		(rd_rs1_data),
+		.rd_rs2_data		(rd_rs2_data),
+		.rd_imm				(rd_imm),
+		.rd_pc				(rd_pc),
+		.rd_csr_rdata		(rd_csr_rdata),
+		.rd_rwrd			(rd_rwrd),
+		.rd_reg_wen			(rd_reg_wen),
+		.rd_csr_wen			(rd_csr_wen),
+		.rd_csr_wrd			(rd_csr_wrd),
+		.rd_trap			(rd_trap),
+		.rd_mret			(rd_mret),
+		.rd_uncon_jump		(rd_uncon_jump),
+		.rd_mem_ren			(rd_mem_ren),
 		.mem_rdata			(mem_read_data),
 		.mem_read_en		(mem_read_en),
 		.mem_addr_comb		(mem_addr_comb),
@@ -265,7 +323,8 @@ module RV32E_CPU(
 		.read_data		(mem_read_data)
 	);
 
-	//原顶层为组合jump_sig拼接+译码直连执行/写回的单周期结构，
-	//重构后IF/ID/EX/WB四阶段一拍一阶段串行执行，模块间以valid/ready总线握手
+	//五阶段一拍一阶段串行执行：IF(取指)→ID(译码)→READ(读取)→EX(执行)→WB(写回)，
+	//模块间以valid/ready总线握手；读取单元(RDU)用ID_reg的读地址读寄存器堆/CSR，
+	//读出的操作数与控制信号锁存进READ_reg后交EXU执行
 
 endmodule

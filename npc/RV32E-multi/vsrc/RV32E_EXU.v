@@ -3,24 +3,24 @@
 module RV32E_EXU(
 	input				clk,
 	input				rst,
-	//总线：与IDU握手
-	input				id_valid,
-	output	reg			id_ready,
-	//ID_reg输入（IDU锁存输出，执行拍稳定）
-	input	[5:0]		id_exu_op,
-	input	[`RV32E_WIDTH-1:0]	id_rs1_data,
-	input	[`RV32E_WIDTH-1:0]	id_rs2_data,
-	input	[`RV32E_WIDTH-1:0]	id_imm,
-	input	[`RV32E_WIDTH-1:0]	id_pc,
-	input	[`RV32E_WIDTH-1:0]	id_csr_rdata,
-	input	[4:0]		id_rwrd,
-	input				id_reg_wen,
-	input				id_csr_wen,
-	input	[11:0]		id_csr_wrd,
-	input				id_trap,
-	input				id_mret,
-	input				id_uncon_jump,
-	input				id_mem_ren,		//load指令标志
+	//总线：与读取单元握手
+	input				rd_valid,
+	output	reg			rd_ready,
+	//READ_reg输入（读取单元锁存输出，执行拍稳定）
+	input	[5:0]		rd_exu_op,
+	input	[`RV32E_WIDTH-1:0]	rd_rs1_data,
+	input	[`RV32E_WIDTH-1:0]	rd_rs2_data,
+	input	[`RV32E_WIDTH-1:0]	rd_imm,
+	input	[`RV32E_WIDTH-1:0]	rd_pc,
+	input	[`RV32E_WIDTH-1:0]	rd_csr_rdata,
+	input	[4:0]		rd_rwrd,
+	input				rd_reg_wen,
+	input				rd_csr_wen,
+	input	[11:0]		rd_csr_wrd,
+	input				rd_trap,
+	input				rd_mret,
+	input				rd_uncon_jump,
+	input				rd_mem_ren,		//load指令标志
 	//内存读口（组合，执行拍有效）
 	input	[`RV32E_WIDTH-1:0]	mem_rdata,
 	output				mem_read_en,	//执行拍且为load
@@ -57,9 +57,9 @@ module RV32E_EXU(
 	reg         cmp_imm;
 	reg  [3:0]  alu_op;
 
-	wire [`RV32E_WIDTH-1:0] src1 = use_pc_src1 ? id_pc : id_rs1_data;
-	wire [`RV32E_WIDTH-1:0] src2 = use_csr_src2 ? id_csr_rdata : use_imm_src2 ? id_imm : id_rs2_data;
-	wire [`RV32E_WIDTH-1:0] cmp_src2 = cmp_imm ? id_imm : id_rs2_data;
+	wire [`RV32E_WIDTH-1:0] src1 = use_pc_src1 ? rd_pc : rd_rs1_data;
+	wire [`RV32E_WIDTH-1:0] src2 = use_csr_src2 ? rd_csr_rdata : use_imm_src2 ? rd_imm : rd_rs2_data;
+	wire [`RV32E_WIDTH-1:0] cmp_src2 = cmp_imm ? rd_imm : rd_rs2_data;
 
 	wire [`RV32E_WIDTH-1:0] alu_result;
 	wire                    alu_zero;
@@ -69,7 +69,7 @@ module RV32E_EXU(
 	RV32E_ALU alu(
 		.src1     (src1),
 		.src2     (src2),
-		.cmp_src1 (id_rs1_data),
+		.cmp_src1 (rd_rs1_data),
 		.cmp_src2 (cmp_src2),
 		.op       (alu_op),
 		.result   (alu_result),
@@ -98,7 +98,7 @@ module RV32E_EXU(
 		use_pc_src1 = 0; use_imm_src2 = 0; cmp_imm = 0; use_csr_src2 = 0;
 		alu_op = `ALU_ADD;
 
-		case (id_exu_op)
+		case (rd_exu_op)
 			`ADD: deco_reg_write_data = alu_result;
 			`ADDI: begin
 				use_imm_src2 = 1;
@@ -110,32 +110,32 @@ module RV32E_EXU(
 			end
 			`LUI: begin
 				use_imm_src2 = 1;
-				deco_reg_write_data = id_imm;
+				deco_reg_write_data = rd_imm;
 			end
 			`JAL: begin
 				use_pc_src1 = 1; use_imm_src2 = 1;
-				deco_reg_write_data = id_pc + 4;
+				deco_reg_write_data = rd_pc + 4;
 				mem_addr_comb = alu_result; deco_jump_addr = alu_result;
 			end
 			`JALR: begin
 				use_imm_src2 = 1;
 				mem_addr_comb = alu_result; deco_jump_addr = alu_result;
-				deco_reg_write_data = id_pc + 4;
+				deco_reg_write_data = rd_pc + 4;
 			end
 			`SW: begin
 				use_imm_src2 = 1;
 				mem_addr_comb = alu_result & word_align;
-				deco_mem_write_data = id_rs2_data; deco_mem_word_wen = 1;
+				deco_mem_write_data = rd_rs2_data; deco_mem_word_wen = 1;
 			end
 			`SH: begin
 				use_imm_src2 = 1;
 				mem_addr_comb = alu_result & half_align;
-				deco_mem_half_data = id_rs2_data[15:0]; deco_mem_half_wen = 1;
+				deco_mem_half_data = rd_rs2_data[15:0]; deco_mem_half_wen = 1;
 			end
 			`SB: begin
 				use_imm_src2 = 1;
 				mem_addr_comb = alu_result;
-				deco_mem_byte_data = id_rs2_data[7:0]; deco_mem_byte_wen = 1;
+				deco_mem_byte_data = rd_rs2_data[7:0]; deco_mem_byte_wen = 1;
 			end
 			`LW: begin
 				use_imm_src2 = 1;
@@ -263,19 +263,19 @@ module RV32E_EXU(
 				deco_reg_write_data = alu_result;
 			end
 			`CSRRW: begin
-				deco_reg_write_data = id_csr_rdata;
-				deco_csr_write_data = id_rs1_data;
+				deco_reg_write_data = rd_csr_rdata;
+				deco_csr_write_data = rd_rs1_data;
 			end
 			`CSRRS: begin
 				alu_op = `ALU_OR; use_csr_src2 = 1;
 				deco_csr_write_data = alu_result;
-				deco_reg_write_data = id_csr_rdata;
+				deco_reg_write_data = rd_csr_rdata;
 			end
 			`MRET: begin
-				deco_jump_addr = id_csr_rdata;
+				deco_jump_addr = rd_csr_rdata;
 			end
 			`ECALL: begin
-				deco_jump_addr = id_csr_rdata;
+				deco_jump_addr = rd_csr_rdata;
 			end
 
 			default: begin end
@@ -283,12 +283,12 @@ module RV32E_EXU(
 	end
 
 	//执行拍读使能：仅执行握手拍且为load指令时有效一拍，避免IO设备被重复读取
-	assign mem_read_en = id_valid & id_ready & id_mem_ren;
+	assign mem_read_en = rd_valid & rd_ready & rd_mem_ren;
 
 	//握手拍：执行结果与写控制一起锁存进EX_reg，下一拍交WBU写回
 	always @(posedge clk) begin
 		if(rst) begin
-			id_ready <= 1;
+			rd_ready <= 1;
 			ex_valid <= 0;
 			ex_reg_write_data <= 0; ex_rwrd <= 0; ex_reg_wen <= 0;
 			ex_csr_write_data <= 0; ex_csr_wrd <= 0; ex_csr_wen <= 0;
@@ -297,16 +297,16 @@ module RV32E_EXU(
 			ex_mem_addr <= 0; ex_mem_write_data <= 0;
 			ex_mem_half_data <= 0; ex_mem_byte_data <= 0;
 			ex_mem_word_wen <= 0; ex_mem_half_wen <= 0; ex_mem_byte_wen <= 0;
-		end else if(id_valid && id_ready) begin
+		end else if(rd_valid && rd_ready) begin
 			ex_reg_write_data <= deco_reg_write_data;
-			ex_rwrd <= id_rwrd;
-			ex_reg_wen <= id_reg_wen;
+			ex_rwrd <= rd_rwrd;
+			ex_reg_wen <= rd_reg_wen;
 			ex_csr_write_data <= deco_csr_write_data;
-			ex_csr_wrd <= id_csr_wrd;
-			ex_csr_wen <= id_csr_wen;
-			ex_trap <= id_trap;
-			ex_pc <= id_pc;
-			ex_jump_sig <= id_uncon_jump | deco_con_jump | id_trap | id_mret;
+			ex_csr_wrd <= rd_csr_wrd;
+			ex_csr_wen <= rd_csr_wen;
+			ex_trap <= rd_trap;
+			ex_pc <= rd_pc;
+			ex_jump_sig <= rd_uncon_jump | deco_con_jump | rd_trap | rd_mret;
 			ex_jump_addr <= deco_jump_addr;
 			ex_mem_addr <= mem_addr_comb;
 			ex_mem_write_data <= deco_mem_write_data;
@@ -316,11 +316,11 @@ module RV32E_EXU(
 			ex_mem_half_wen <= deco_mem_half_wen;
 			ex_mem_byte_wen <= deco_mem_byte_wen;
 			ex_valid <= 1;
-			id_ready <= 0;
+			rd_ready <= 0;
 		end else if(ex_valid && ex_ready) begin
 			//WBU已接收EX_reg，恢复空闲
 			ex_valid <= 0;
-			id_ready <= 1;
+			rd_ready <= 1;
 		end
 	end
 

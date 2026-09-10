@@ -60,7 +60,11 @@ void exec_once(){
 		sim_cycle_count++;				//每迭代=一个完整时钟周期
 		device_update();
 		//授权逻辑不变（键盘问题修复）：只在load指令首次呈现拍（SEND拍）授权一次dequeue
-		FIFO_read_allow = (top_if_valid && ((top_inst & 0x7f) == 0x03)) ? 1 : 0;
+		// FIFO_read_allow = (top_if_valid && ((top_inst & 0x7f) == 0x03)) ? 1 : 0;	//修改（键盘问题二次复发修复）：插入RDU读取级后if_valid(SEND拍)与读窗口(read_en拍)错开一拍，授权给了无人调用的拍，真正读键盘的三次调用全部无授权，按键永远读不到
+		//修改（键盘问题二次复发修复）：改为读窗口武装——读空闲拍(RAM_REN=0)武装授权，
+		//读窗口内保持无授权；窗口内首笔kbd_read消费一次，窗口内其余调用(含EXU采样笔)返回同一稳定值。
+		//授权与调用同源于内存口，不再绑定任何流水级信号，对增删流水级结构性免疫
+		FIFO_read_allow = top->RAM_REN ? 0 : 1;
 		//posedge前快照：ex_valid=1表示本沿是WB提交沿（退休沿），拍末GPR/CSR/store提交、pc更新
 		bool will_retire = top_ex_valid;
 		//MMIO判定限load/store（RAM_ADDR=EXU组合地址，对跳转类=目标地址、非访存指令=残留值，须过滤）
