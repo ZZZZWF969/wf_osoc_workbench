@@ -24,7 +24,13 @@ CPU_CORES     ?= 8
 DIFF_FLAG	  := --diff=$(NEMU_HOME)/build/riscv32-nemu-interpreter-so
 
 ifneq ($(findstring $(DIFF_FLAG), $(NPC_FLAGS)), $(DIFF_FLAG))
-	NPC_FLAGS += $(DIFF_FLAG)
+#	NPC_FLAGS += $(DIFF_FLAG)	#修改：命令行传入NPC_FLAGS时优先级高于make内+=，会丢掉--diff，改用override强制追加
+	override NPC_FLAGS += $(DIFF_FLAG)
+endif
+
+#日志文件传递：make run log=/path/to/file → -l 参数（与image变量同风格）
+ifneq ($(log),)
+	override NPC_FLAGS += -l $(log)
 endif
 
 IMG			  ?= $(if $(image),$(image)-riscv32e-npc.bin,)

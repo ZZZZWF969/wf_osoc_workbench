@@ -12,6 +12,11 @@
 int FIFO_read_allow = 0;
 extern int FIFO_read_allow;
 
+//CPI统计（常开，无配置开关）：exec_once内层循环逐拍/逐退休指令计数，停机时报告
+uint64_t sim_cycle_count = 0;		//仿真时钟周期数
+uint64_t sim_retire_count = 0;		//退休指令数
+extern FILE* npc_log_file;		//-l日志文件：CPI统计作为日志最后一行
+
 extern void sim_finish();
 extern void halt();
 
@@ -48,37 +53,11 @@ void exec_once(){
 //修改（多周期适配）：原函数体"一次调用走一个时钟周期"基于单周期假设（1周期=1指令），
 //多周期RTL下一条指令占IF/ID/EX/WB共4拍，原实现导致itrace重复记录、difftest四倍速跑飞。
 //重定义为"驱动时钟直至本条指令退休或仿真结束"，恢复"1次exec_once=1条指令"的契约，
-//si/difftest/itrace等监视调用结构随之自动恢复正确。原函数体整体注释保留如下：
-//	top->INST = vmem_read(top->PC, 4);		//取指
-//	device_update();
-//	top->clk = 1;
-//	// 修改：授权只给"本拍真实执行 load 指令"的拍——时序取指下 posedge 锁存下一条后
-//	// IDU 会立即重算（nba 阶段），若下一条是 LW 会提前触发 kbd_read 消费，必须用本拍指令判断
-//	// FIFO_read_allow = ((top_inst & 0x7f) == 0x03) ? 1 : 0;	//修改（键盘问题修复）：多周期下一条load占据INST寄存器4拍，原判定在ID锁存拍与EX锁存拍各授权一次，kbd_read双重dequeue吞掉按键事件
-//	//修改（键盘问题修复）：加if_valid门控，授权收窄到指令首次呈现拍（SEND拍），保证每条load只dequeue一次
-//	FIFO_read_allow = (top_if_valid && ((top_inst & 0x7f) == 0x03)) ? 1 : 0;
-//	top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉高
-//	IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_pc, top_inst);)		//修改（多周期适配）：itrace移至下方退休拍（每拍记录会同指令重复3次且PC错配）
-//	//仿真结束逻辑
-//	if(Verilated::gotFinish()){
-//		npctrap(top->PC, top_gpr[10]);
-//		std::cout<<std::string(ANSI_FG_YELLOW)+"get finish signal by DPI-C at PC=0x"
-//		<<std::hex<<top->PC<<std::string(ANSI_NONE)
-//		<<std::endl;
-//		return;
-//	}
-//		// if(is_io_device(top->RAM_ADDR)){
-//		// 	// std::cout<<"skip difftest"<<std::endl;
-//		// 	IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
-//		// }else{
-//		// 	trace_and_difftest();
-//		// }
-//	top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉低
-//	IFDEF(CONFIG_NPC_WATCHPOINT, watchpoint_difftest();)
-//	return;
+//si/difftest/itrace等监视调用结构随之自动恢复正确。
 
 	//内层循环：逐拍驱动时钟，直到本条指令退休（WB提交沿）或仿真结束
 	while(1){
+		sim_cycle_count++;				//每迭代=一个完整时钟周期
 		device_update();
 		//授权逻辑不变（键盘问题修复）：只在load指令首次呈现拍（SEND拍）授权一次dequeue
 		FIFO_read_allow = (top_if_valid && ((top_inst & 0x7f) == 0x03)) ? 1 : 0;
@@ -88,7 +67,9 @@ void exec_once(){
 		bool retire_is_mmio = will_retire && is_io_device(top->RAM_ADDR)
 			&& (((top_inst & 0x7f) == 0x03) || ((top_inst & 0x7f) == 0x23));
 		top->clk = 1; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉高
+
 		if(will_retire){
+			sim_retire_count++;				//退休沿：自跳转停机指令与gotFinish同拍，也在此计入
 			//退休拍统一监视点：此刻GPR/CSR/store已提交，top_pc=下一条地址，ir_pc/INST
 			//仍是本条指令，mtrace捕获区必属本条指令（读发生在退休沿前，store写在退休沿内）
 			IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_ir_pc, top_inst);)
@@ -99,6 +80,7 @@ void exec_once(){
 				trace_and_difftest();					//普通指令：REF推一条并比对（top_pc已=下一条地址）
 			}
 		}
+		
 		//仿真结束逻辑
 		if(Verilated::gotFinish()){
 			//ebreak在ID拍停机等不到退休沿，此处补记本条指令（本拍已退休则不重复记）
@@ -118,6 +100,26 @@ void exec_once(){
 	}
 }
 
+//CPI统计报告：停机时打印终端并写入日志最后一行（无退休指令时CPI记0防除零）
+//日志侧先写退出状态块再写CPI，头尾画线与中间运行痕迹划分（与文件头NPC run info块对称）
+void cpi_report(){
+	double cpi = sim_retire_count ? (double)sim_cycle_count / (double)sim_retire_count : 0;
+	printf("retired %llu instructions in %llu cycles, CPI = %.2f\n",
+		(unsigned long long)sim_retire_count, (unsigned long long)sim_cycle_count, cpi);
+	if(npc_log_file != NULL){
+		//退出状态：NPC_ABORT即difftest比对失败，NPC_END按a0区分GOOD/BAD TRAP
+		const char* status;
+		if(npc_state.state == NPC_ABORT)			status = "ABORT (difftest failed)";
+		else if(npc_state.halt_ret == 0)			status = "HIT GOOD TRAP";
+		else										status = "HIT BAD TRAP";
+		fprintf(npc_log_file, "===== NPC exit status =====\n");
+		fprintf(npc_log_file, "%s at pc = 0x%08x\n", status, npc_state.halt_pc);
+		fprintf(npc_log_file, "retired %llu instructions in %llu cycles, CPI = %.2f\n",
+			(unsigned long long)sim_retire_count, (unsigned long long)sim_cycle_count, cpi);
+		fprintf(npc_log_file, "==========================\n");
+	}
+}
+
 extern "C" void execute(uint64_t n){
 
 	switch(npc_state.state){
@@ -132,7 +134,7 @@ extern "C" void execute(uint64_t n){
 			IFDEF(CONFIG_NPC_ITRACE, itrace_display();)
 			break;
 		}
-		exec_once();					//等不用了记得改回去
+		exec_once();
 		//修改（多周期适配）：difftest已移回exec_once退休拍触发（此处逐拍触发会使REF四倍速跑飞）
 		// if(is_io_device(top->RAM_ADDR) /*&& top->RAM_ADDR!=KBD_ADDR*/ ){
 		// 	// std::cout<<"skip difftest"<<std::endl;
@@ -155,6 +157,7 @@ extern "C" void execute(uint64_t n){
 		  (std::string(ANSI_FG_RED) + "HIT BAD TRAP" + ANSI_NONE)))				//return 不是0;
 		<<" at pc = 0x"
 		<<std::hex<<npc_state.halt_pc<<std::dec<<std::endl;
+		cpi_report();		//停机时报告CPI统计（si中途暂停与q退出不走此分支）
 	default:
 		break;
 	}

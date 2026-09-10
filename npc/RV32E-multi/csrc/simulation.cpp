@@ -57,6 +57,12 @@ int main(int argc, char** argv){
 #endif
 	delete top;
 	memory_not_use();
-	
+
+	//关闭日志文件：确保CPI统计末行等缓冲内容落盘
+	{
+		extern FILE* npc_log_file;
+		if(npc_log_file != NULL){ fclose(npc_log_file); npc_log_file = NULL; }
+	}
+
 	return is_statu_bad();
 }

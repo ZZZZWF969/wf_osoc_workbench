@@ -51,23 +51,17 @@ void memory_not_use(){
 
 uint8_t* guest_to_host(paddr_t paddr){return vmem+paddr-MEM_BASE;}
 
-//void serial_putch(char c);
-
 void pmem_write(paddr_t addr, int len, word_t data){
     if(addr-MEM_BASE < MEMSIZE){
         host_write(guest_to_host(addr), len, data);
         return;
 	}else if(is_io_device(addr)){
-		//serial_putch(data);
 		io_device_write(addr, len, data);
 	}else{
 		printf(ANSI_FG_RED"address = %08x out of bound of memory" ANSI_NONE "\n", addr);
 		assert(0);
     }
 }
-
-//uint64_t get_time();
-// void get_time();
 
 extern "C" word_t pmem_read(paddr_t addr, int len){
 //	printf(ANSI_FG_RED"read_memory address = %08x , pc: %08x" ANSI_NONE "\n", addr, top->PC);
@@ -85,11 +79,11 @@ extern "C" word_t pmem_read(paddr_t addr, int len){
 }
 
 word_t vmem_read(vaddr_t addr, int len){
-    return pmem_read(addr, len);
+	return pmem_read(addr, len);
 }
 
 void vmem_write(vaddr_t addr, int len, word_t data){
-    return pmem_write(addr, len, data);
+	return pmem_write(addr, len, data);
 }
 
 //mtrace捕获区（多周期适配）：DPI层只捕获不打印，exec_once退休拍统一输出。
@@ -103,29 +97,27 @@ int mtrace_last_write_len = 0;
 
 //退休拍内存踪迹打印：按本条指令opcode决定打印读还是写（捕获区时序上必属本条指令：
 //load数据读全部发生在退休沿之前，store写恰在退休沿内，下一条取指在退休沿之后）
+extern FILE* npc_log_file;		//-l日志文件：访存踪迹与终端同步落盘
 void mtrace_retire_print(){
 	uint32_t opcode = top_inst & 0x7f;
 	if(opcode == 0x03){		//load：打印读捕获区
-		printf("pc=0x%08x  memory read  addr: 0x%08x , ret: 0x%08x\n"
-			, top_ir_pc, mtrace_last_read_addr, mtrace_last_read_ret);
+		if(npc_log_file != NULL)
+			fprintf(npc_log_file, "[MTRACE] pc=0x%08x read  addr: 0x%08x , ret: 0x%08x\n"
+				, top_ir_pc, mtrace_last_read_addr, mtrace_last_read_ret);
 	}else if(opcode == 0x23){	//store：打印写捕获区（含mem_write实际收到的掩码数据与宽度）
-		printf("pc=0x%08x  memory write addr: 0x%08x , len: %d , data: 0x%08x\n"
-			, top_ir_pc, mtrace_last_write_addr, mtrace_last_write_len, mtrace_last_write_data);
+		if(npc_log_file != NULL)
+			fprintf(npc_log_file, "[MTRACE] pc=0x%08x write addr: 0x%08x , len: %d , data: 0x%08x\n"
+				, top_ir_pc, mtrace_last_write_addr, mtrace_last_write_len, mtrace_last_write_data);
 	}
 }
 
 extern "C" word_t mem_read(vaddr_t addr, int len){
-	word_t ret = vmem_read(addr, len);							//等不用了记得改回去
-	//修改（多周期适配）：printf移至exec_once退休拍，此处只捕获最近一次读（取指也走本DPI会刷屏）
-	//IFDEF(CONFIG_NPC_MTRACE, printf("memory read at address: 0x%08x , ret: 0x%08x\n",addr, ret);)
+	word_t ret = vmem_read(addr, len);
 	IFDEF(CONFIG_NPC_MTRACE, mtrace_last_read_addr = addr; mtrace_last_read_ret = ret;)
 	return ret;
-//	return vmem_read(addr, len);
 }
 
 extern "C" void mem_write(vaddr_t addr, int len, word_t data){
-	//修改（多周期适配）：printf移至exec_once退休拍，此处只捕获最近一次写
-	//IFDEF(CONFIG_NPC_MTRACE, printf("memory write at address: 0x%08x , data: 0x%08x\n",addr, data);)
 	IFDEF(CONFIG_NPC_MTRACE, mtrace_last_write_addr = addr; mtrace_last_write_data = data; mtrace_last_write_len = len;)
     return vmem_write(addr, len, data);
 }

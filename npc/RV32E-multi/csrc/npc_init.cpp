@@ -2,10 +2,16 @@
 #include "include/vmem.h"
 #include "include/npc.h"
 #include "include/sdb.h"
+#include <generated/autoconf.h>
+#include <time.h>
 
 static char* img_file = NULL;
 static char* diff_so_file = NULL;
+//默认日志落在multi根目录npc-log.txt（make run的工作目录即multi根目录），-l可覆盖为自定义路径
+static char* log_file_path = (char*)"npc-log.txt";
 IFDEF(CONFIG_NPC_DIFFTEST, static int difftest_port = 1234;)
+
+FILE* npc_log_file = NULL;			//日志文件：itrace/mtrace全量落盘与CPI统计末行，各写入点fprintf
 
 static const uint32_t default_img [5] = {
   0x00000297,  // auipc t0,0
@@ -60,6 +66,9 @@ static int parse_args(int argc, char* argv[]){
         switch(o){
 			case 'b': batch_mode_run(); break;
 			case 'd': diff_so_file = optarg; printf("diff-so-file: %s\n", diff_so_file); break;
+			case 'l': log_file_path = optarg; break;		//日志文件路径（原option table有声明但无case，传入会掉进default退出）
+			case 'p': IFDEF(CONFIG_NPC_DIFFTEST, difftest_port = atoi(optarg);) break;	//difftest端口（仅DIFFTEST开时有意义）
+			case 'e': printf("--elf is not implemented yet\n"); break;	//暂未实现，占位避免掉进default退出
             case 1: img_file = optarg; return 0;
 			default:
 				printf("Usage: %s [OPTION...] IMAGE [args]\n\n", argv[0]);
@@ -75,6 +84,33 @@ static int parse_args(int argc, char* argv[]){
 	return 0;
 }
 
+//打开日志文件并写入运行信息头：即使所有踪迹开关关闭，日志也保有本次运行的基本信息
+static void open_log_file(long img_size){
+	if(log_file_path == NULL) return;
+	npc_log_file = fopen(log_file_path, "w");	//覆盖模式：每次运行生成一份新日志
+	if(npc_log_file == NULL){
+		printf("can not open log file: %s\n", log_file_path);
+		return;
+	}
+	char time_buf[32];
+	time_t now = time(NULL);
+	strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", localtime(&now));
+	fprintf(npc_log_file, "===== NPC run info =====\n");
+	fprintf(npc_log_file, "start time : %s\n", time_buf);
+	fprintf(npc_log_file, "image      : %s (%ld bytes)\n",
+		img_file == NULL ? "default_img(5 insts)" : img_file, img_size);
+	//MUXDEF二选一：IFDEF(m,A,B)展开是"A,B"逗号表达式而非二选一，此处必须用MUXDEF
+	MUXDEF(CONFIG_NPC_DIFFTEST,
+		fprintf(npc_log_file, "diff ref   : %s\n", diff_so_file);,
+		fprintf(npc_log_file, "diff ref   : disabled\n");)	fprintf(npc_log_file, "trace      : ITRACE %s, MTRACE %s, WAVE %s, DIFFTEST %s, WATCHPOINT %s\n",
+		MUXDEF(CONFIG_NPC_ITRACE, "on", "off"),
+		MUXDEF(CONFIG_NPC_MTRACE, "on", "off"),
+		MUXDEF(CONFIG_NPC_WAVE, "on", "off"),
+		MUXDEF(CONFIG_NPC_DIFFTEST, "on", "off"),
+		MUXDEF(CONFIG_NPC_WATCHPOINT, "on", "off"));
+	fprintf(npc_log_file, "=======================\n");
+}
+
 void npc_init(int argc, char *argv[]){
 	printf("argc: %d\n", argc);
 	printf("argv: %s\n", *argv);
@@ -85,5 +121,6 @@ void npc_init(int argc, char *argv[]){
 	create_virtual_memory();
 	init_device();
 	long img_size = load_img();
+	open_log_file(img_size);				//载入镜像后开日志：信息头需要img名与大小
 	IFDEF(CONFIG_NPC_DIFFTEST, init_difftest(diff_so_file, img_size, difftest_port);)
 }
