@@ -119,6 +119,11 @@ module RV32E_CPU(
 	//内存写地址：写回拍取WBU锁存地址，其余拍（读）取EXU组合地址
 	assign RAM_WDATA = wbu_mem_write_data;
 
+	//IFU-SRAM取指总线（IFU发读请求，SRAM延迟一拍返回指令）
+	wire					sram_ren;
+	wire	[`RV32E_WIDTH-1:0]	sram_addr;
+	wire	[`RV32E_WIDTH-1:0]	sram_rdata;
+
 	RV32E_IFU IFU(
 		.clk			(clk),
 		.rst			(rst),
@@ -128,7 +133,19 @@ module RV32E_CPU(
 		.if_ready		(if_ready),
 		.if_valid		(if_valid),
 		.INST			(INST),
-		.pc_count		(programe_counter)
+		.pc_count		(programe_counter),
+		.sram_ren		(sram_ren),
+		.sram_addr		(sram_addr),
+		.sram_rdata		(sram_rdata)
+	);
+
+	//取指SRAM：接收IFU读请求，内部经DPI-C读取，延迟一拍返回指令
+	RV32E_SRAM SRAM_IF(
+		.clk			(clk),
+		.rst			(rst),
+		.sram_ren		(sram_ren),
+		.sram_addr		(sram_addr),
+		.sram_rdata		(sram_rdata)
 	);
 
 	RV32E_IDU IDU(
@@ -326,5 +343,6 @@ module RV32E_CPU(
 	//五阶段一拍一阶段串行执行：IF(取指)→ID(译码)→READ(读取)→EX(执行)→WB(写回)，
 	//模块间以valid/ready总线握手；读取单元(RDU)用ID_reg的读地址读寄存器堆/CSR，
 	//读出的操作数与控制信号锁存进READ_reg后交EXU执行
+	//修改（SRAM取指改造）：IF扩为"请求拍+返回拍"两拍（经SRAM取指），全流程6拍/指令
 
 endmodule

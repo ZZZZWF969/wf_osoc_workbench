@@ -118,6 +118,12 @@ extern "C" word_t mem_read(vaddr_t addr, int len){
 }
 
 extern "C" void mem_write(vaddr_t addr, int len, word_t data){
-	IFDEF(CONFIG_NPC_MTRACE, mtrace_last_write_addr = addr; mtrace_last_write_data = data; mtrace_last_write_len = len;)
+    IFDEF(CONFIG_NPC_MTRACE, mtrace_last_write_addr = addr; mtrace_last_write_data = data; mtrace_last_write_len = len;)
     return vmem_write(addr, len, data);
+}
+
+//取指专用读（退休拍预取配套）：与mem_read同源读vmem，但不进mtrace捕获区，
+//避免预取读与退休沿同拍、污染load指令的读踪迹（取指SRAM经DPI-C调用）
+extern "C" word_t inst_fetch(vaddr_t addr, int len){
+    return vmem_read(addr, len);
 }
