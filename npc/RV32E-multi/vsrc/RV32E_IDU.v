@@ -30,8 +30,6 @@ module RV32E_IDU(
 	output	reg [11:0]		id_csr_rrd
 );
 
-	import "DPI-C" function void sim_finish();
-
 	//译码组合结果（供锁存），默认赋值避免latch
 	reg [5:0]			deco_exu_op;
 	reg	[`RV32E_WIDTH-1:0]	deco_imm;
@@ -44,7 +42,6 @@ module RV32E_IDU(
 	reg					deco_mret;
 	reg					deco_uncon_jump;
 	reg					deco_mem_ren;
-	reg					deco_ebreak;
 
 	wire [2:0]  funct3;
 	wire [6:0]  funct7;
@@ -70,7 +67,7 @@ module RV32E_IDU(
 		deco_exu_op = `EXU_DEFAULT; deco_imm = 0; deco_reg_wen = 0;
 		deco_csr_wen = 0; deco_csr_wrd = 0; deco_csr_ren = 0; deco_csr_rrd = 0;
 		deco_trap = 0; deco_mret = 0; deco_uncon_jump = 0;
-		deco_mem_ren = 0; deco_ebreak = 0;
+		deco_mem_ren = 0;
 
 		//I_TYPE
 		if(opcode == 7'b0010011) begin	
@@ -144,7 +141,7 @@ module RV32E_IDU(
 		//CSR INST
 		if(opcode == 7'b1110011) begin
 			if(inst == 32'h0010_0073) begin
-				deco_ebreak = 1;
+				deco_exu_op = `EBREAK;	//ebreak的执行(停机)移至EXU，此处仅译码出操作码
 			end else if(inst == 32'h3020_0073) begin
 				deco_exu_op = `MRET; deco_mret = 1;
 				deco_csr_rrd = `MEPC; deco_csr_ren = 1;
@@ -259,9 +256,6 @@ module RV32E_IDU(
 			id_rs1_addr <= 0; id_rs2_addr <= 0;
 			id_csr_ren <= 0; id_csr_rrd <= 0;
 		end else if(if_valid && if_ready) begin
-			if(deco_ebreak) begin
-				sim_finish();
-			end
 			id_exu_op <= deco_exu_op;
 			id_imm <= deco_imm;
 			id_pc <= pc;

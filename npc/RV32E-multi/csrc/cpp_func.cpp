@@ -64,7 +64,11 @@ void exec_once(){
 		//修改（键盘问题二次复发修复）：改为读窗口武装——读空闲拍(RAM_REN=0)武装授权，
 		//读窗口内保持无授权；窗口内首笔kbd_read消费一次，窗口内其余调用(含EXU采样笔)返回同一稳定值。
 		//授权与调用同源于内存口，不再绑定任何流水级信号，对增删流水级结构性免疫
-		FIFO_read_allow = top->RAM_REN ? 0 : 1;
+		//修改（访存SRAM化）：时序访存下mem_read仅在请求拍posedge调用一次，重复消费问题消失；
+		//授权改为恒授权——每拍首次kbd_read消费、拍内后续调用返回稳定值（keyboard.cpp内消费后清零），
+		//原"读窗口武装"行保留以便验证失败时回退
+		//FIFO_read_allow = top->RAM_REN ? 0 : 1;
+		FIFO_read_allow = 1;
 		//posedge前快照：ex_valid=1表示本沿是WB提交沿（退休沿），拍末GPR/CSR/store提交、pc更新
 		bool will_retire = top_ex_valid;
 		//MMIO判定限load/store（RAM_ADDR=EXU组合地址，对跳转类=目标地址、非访存指令=残留值，须过滤）
@@ -87,8 +91,9 @@ void exec_once(){
 		
 		//仿真结束逻辑
 		if(Verilated::gotFinish()){
-			//ebreak在ID拍停机等不到退休沿，此处补记本条指令（本拍已退休则不重复记）
+			//ebreak在EX拍停机等不到退休沿，此处补记本条指令（本拍已退休则不重复记）
 			if(!will_retire){
+				sim_retire_count++;			//ebreak计入退休指令数，使CPI统计完整
 				IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_ir_pc, top_inst);)
 			}
 			npctrap(top->PC, top_gpr[10]);

@@ -1,5 +1,7 @@
 `include "RV32E.vh"
 
+//修改（访存SRAM化）：本模块的组合读+写回拍posedge写已被RV32E_DSRAM（请求拍/完成拍时序访存）取代，
+//不再在CPU顶层实例化；文件整体保留以便回溯。
 module RV32E_MEM(
 	input				clk,
 	input				write_en,

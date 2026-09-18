@@ -14,7 +14,7 @@ LDSCRIPTS += $(AM_HOME)/scripts/linker.ld
 LDFLAGS   += --defsym=_pmem_start=0x80000000 --defsym=_entry_offset=0x0
 LDFLAGS   += --gc-sections -e _start
 
-NPC_FLAGS += -b
+#NPC_FLAGS += -b
 NPC_FLAGS += --diff=$(NEMU_HOME)/build/riscv32-nemu-interpreter-so
 
 MAINARGS_MAX_LEN = 64

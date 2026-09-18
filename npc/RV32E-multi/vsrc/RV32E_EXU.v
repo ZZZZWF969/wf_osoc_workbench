@@ -21,14 +21,13 @@ module RV32E_EXU(
 	input				rd_mret,
 	input				rd_uncon_jump,
 	input				rd_mem_ren,		//load指令标志
-	//内存读口（组合，执行拍有效）
-	input	[`RV32E_WIDTH-1:0]	mem_rdata,
-	output				mem_read_en,	//执行拍且为load
-	output	reg	[`RV32E_WIDTH-1:0]	mem_addr_comb,	//组合访存地址（喂MEM读口与RAM_ADDR）
 	//总线：与WBU握手
 	input				ex_ready,
 	output	reg			ex_valid,
 	//EX_reg锁存输出（去往WBU，写回拍有效）
+	output	reg			ex_mem_req,		//访存请求标志（load或store），供顶层路由
+	output	reg			ex_mem_ren,		//load标志，供顶层路由与写回数据选择
+	output	reg [5:0]	ex_exu_op,		//锁存的操作码，供顶层做load写回数据格式化
 	output	reg	[`RV32E_WIDTH-1:0]	ex_reg_write_data,
 	output	reg [4:0]	ex_rwrd,
 	output	reg			ex_reg_wen,
@@ -47,6 +46,8 @@ module RV32E_EXU(
 	output	reg			ex_mem_half_wen,	//按半字写
 	output	reg			ex_mem_byte_wen		//按字节写
 );
+
+	import "DPI-C" function void sim_finish();
 
 	wire [31:0] word_align = 32'hFFFF_FFFC;
 	wire [31:0] half_align = 32'hFFFF_FFFE;
@@ -79,6 +80,7 @@ module RV32E_EXU(
 	);
 
 	//组合执行结果（锁存输入），默认赋值避免latch
+	reg	[`RV32E_WIDTH-1:0]	mem_addr_comb;	//组合访存地址，锁存进EX_reg
 	reg					deco_con_jump;
 	reg	[`RV32E_WIDTH-1:0]	deco_jump_addr;
 	reg	[`RV32E_WIDTH-1:0]	deco_reg_write_data;
@@ -89,12 +91,14 @@ module RV32E_EXU(
 	reg					deco_mem_word_wen;
 	reg					deco_mem_half_wen;
 	reg					deco_mem_byte_wen;
+	reg					deco_mem_req;
 
 	always @(*) begin
 		mem_addr_comb = 0; deco_con_jump = 0; deco_jump_addr = 0;
 		deco_reg_write_data = 0; deco_csr_write_data = 0; deco_mem_write_data = 0;
 		deco_mem_half_data = 0; deco_mem_byte_data = 0;
 		deco_mem_word_wen = 0; deco_mem_half_wen = 0; deco_mem_byte_wen = 0;
+		deco_mem_req = 0;
 		use_pc_src1 = 0; use_imm_src2 = 0; cmp_imm = 0; use_csr_src2 = 0;
 		alu_op = `ALU_ADD;
 
@@ -139,28 +143,23 @@ module RV32E_EXU(
 			end
 			`LW: begin
 				use_imm_src2 = 1;
-				deco_reg_write_data = mem_rdata;
 				mem_addr_comb = alu_result & word_align;
 			end
 			`LH: begin
 				use_imm_src2 = 1;
 				mem_addr_comb = alu_result & half_align;
-				deco_reg_write_data = {{16{mem_rdata[15]}},mem_rdata[15:0]};
 			end
 			`LHU: begin
 				use_imm_src2 = 1;
 				mem_addr_comb = alu_result & half_align;
-				deco_reg_write_data = {16'h0000,mem_rdata[15:0]};
 			end
 			`LB: begin
 				use_imm_src2 = 1;
 				mem_addr_comb = alu_result;
-				deco_reg_write_data = {{24{mem_rdata[7]}},mem_rdata[7:0]};
 			end
 			`LBU: begin
 				use_imm_src2 = 1;
 				mem_addr_comb = alu_result;
-				deco_reg_write_data = {24'h000000,mem_rdata[7:0]};
 			end
 			`SUB: begin
 				alu_op = `ALU_SUB;
@@ -280,16 +279,17 @@ module RV32E_EXU(
 
 			default: begin end
 		endcase
-	end
 
-	//执行拍读使能：仅执行握手拍且为load指令时有效一拍，避免IO设备被重复读取
-	assign mem_read_en = rd_valid & rd_ready & rd_mem_ren;
+		//访存请求标志：load或store，随EX_reg锁存供顶层路由到访存单元
+		deco_mem_req = rd_mem_ren | deco_mem_word_wen | deco_mem_half_wen | deco_mem_byte_wen;
+	end
 
 	//握手拍：执行结果与写控制一起锁存进EX_reg，下一拍交WBU写回
 	always @(posedge clk) begin
 		if(rst) begin
 			rd_ready <= 1;
 			ex_valid <= 0;
+			ex_mem_req <= 0; ex_mem_ren <= 0; ex_exu_op <= `EXU_DEFAULT;
 			ex_reg_write_data <= 0; ex_rwrd <= 0; ex_reg_wen <= 0;
 			ex_csr_write_data <= 0; ex_csr_wrd <= 0; ex_csr_wen <= 0;
 			ex_trap <= 0; ex_pc <= 0;
@@ -298,6 +298,13 @@ module RV32E_EXU(
 			ex_mem_half_data <= 0; ex_mem_byte_data <= 0;
 			ex_mem_word_wen <= 0; ex_mem_half_wen <= 0; ex_mem_byte_wen <= 0;
 		end else if(rd_valid && rd_ready) begin
+			//ebreak在本拍(执行拍)停机，不再由IDU提前触发
+			if(rd_exu_op == `EBREAK) begin
+				sim_finish();
+			end
+			ex_mem_req <= deco_mem_req;
+			ex_mem_ren <= rd_mem_ren;
+			ex_exu_op <= rd_exu_op;
 			ex_reg_write_data <= deco_reg_write_data;
 			ex_rwrd <= rd_rwrd;
 			ex_reg_wen <= rd_reg_wen;

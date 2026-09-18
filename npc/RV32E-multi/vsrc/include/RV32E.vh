@@ -44,6 +44,7 @@
 `define CSRRS 6'd37
 `define CSRRW 6'd38
 `define MRET 6'd39
+`define EBREAK 6'd40
 
 //ALU_OP
 `define ALU_ADD  4'd0
