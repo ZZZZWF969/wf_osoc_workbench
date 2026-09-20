@@ -28,8 +28,17 @@ void mtrace_retire_print();
 
 void difftest_skip_ref();
 
+//退休沿统一监视点（对齐NEMU同名函数设计）：指令记录→访存踪迹打印→difftest比对→监视点检查
+//调用时机约束：必须在退休沿posedge eval之后调用——此刻GPR/CSR/store已提交、top_pc=下一条地址、
+//ir_pc/INST仍是本条指令，itrace/mtrace的记录与REF比对才同属本条指令
 void trace_and_difftest(){
-	IFDEF(CONFIG_NPC_DIFFTEST, difftest_step(top_pc);)
+	//修改（职责归并）：原函数体仅difftest，现将exec_once退休块的itrace/mtrace与逐拍调用的
+	//watchpoint一并无条件并入（各工具自带IFDEF，调用处无需宏包裹），使函数名副其实
+	// IFDEF(CONFIG_NPC_DIFFTEST, difftest_step(top_pc);)
+	IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_ir_pc, top_inst);)		//指令踪迹：退休沿记录本条指令
+	IFDEF(CONFIG_NPC_MTRACE, mtrace_retire_print();)				//访存踪迹：退休沿打印本条指令读写
+	IFDEF(CONFIG_NPC_DIFFTEST, difftest_step(top_pc);)				//difftest：REF推一条并比对（skip标志由设备访问点置位，top_pc已=下一条地址）
+	IFDEF(CONFIG_NPC_WATCHPOINT, watchpoint_difftest();)			//监视点：退休沿求值（原逐拍调用，粒度改逐指令）
 }
 
 // 周期外设任务：键盘用拍数节流（每 1000 拍 poll 一次，≈0.1~1ms 延迟，开销小），
@@ -71,22 +80,29 @@ void exec_once(){
 		FIFO_read_allow = 1;
 		//posedge前快照：ex_valid=1表示本沿是WB提交沿（退休沿），拍末GPR/CSR/store提交、pc更新
 		bool will_retire = top_ex_valid;
-		//MMIO判定限load/store（RAM_ADDR=EXU组合地址，对跳转类=目标地址、非访存指令=残留值，须过滤）
-		bool retire_is_mmio = will_retire && is_io_device(top->RAM_ADDR)
-			&& (((top_inst & 0x7f) == 0x03) || ((top_inst & 0x7f) == 0x23));
+		//修改（difftest skip判定重构）：退休拍读取的RAM_ADDR是EXU组合地址，DSRAM访存化后EXU在请求拍
+		//即释放，退休拍地址已是残留值；skip判定移入vmemory的DPI访存入口mem_read/mem_write（DSRAM
+		//请求拍访问设备时即刻置标志），退休沿无条件进入difftest处理，由difftest_step按标志回拷
+		//DUT状态并跳过REF执行，且恰好吃掉本条MMIO指令（原实现回拷延后到下一条指令，连续MMIO时
+		//夹在中间的pmem访存被REF整体跳过，其内存副作用在REF侧丢失——snake的uptime高32位写回即此因）
+		// bool retire_is_mmio = will_retire && is_io_device(top->RAM_ADDR)
+		// 	&& (((top_inst & 0x7f) == 0x03) || ((top_inst & 0x7f) == 0x23));
 		top->clk = 1; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉高
 
 		if(will_retire){
-			sim_retire_count++;				//退休沿：自跳转停机指令与gotFinish同拍，也在此计入
+			sim_retire_count++;				//退休沿：自跳转停机指令与gotFinish同拍，也在此计入（CPI簿记，不随监视职责归并移动）
+			//修改（职责归并）：itrace/mtrace调用并入trace_and_difftest统一入口，退休块只留一次调用，
+			//退休拍统一监视点的时序约束说明亦移至该函数头部
 			//退休拍统一监视点：此刻GPR/CSR/store已提交，top_pc=下一条地址，ir_pc/INST
 			//仍是本条指令，mtrace捕获区必属本条指令（读发生在退休沿前，store写在退休沿内）
-			IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_ir_pc, top_inst);)
-			IFDEF(CONFIG_NPC_MTRACE, mtrace_retire_print();)
-			if(retire_is_mmio){
-				IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)	//MMIO访问：DUT状态回拷REF，跳过比对
-			}else{
-				trace_and_difftest();					//普通指令：REF推一条并比对（top_pc已=下一条地址）
-			}
+			// IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_ir_pc, top_inst);)	//已并入trace_and_difftest
+			// IFDEF(CONFIG_NPC_MTRACE, mtrace_retire_print();)
+			// if(retire_is_mmio){
+			// 	IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)	//MMIO访问：DUT状态回拷REF，跳过比对
+			// }else{
+			// 	trace_and_difftest();					//普通指令：REF推一条并比对（top_pc已=下一条地址）
+			// }
+			trace_and_difftest();					//退休沿统一监视点：itrace/mtrace/difftest/watchpoint（GPR已提交，top_pc=下一条地址）
 		}
 		
 		//仿真结束逻辑
@@ -104,7 +120,10 @@ void exec_once(){
 			return;
 		}
 		top->clk = 0; top->eval(); IFDEF(CONFIG_NPC_WAVE, tfp->dump(wave_count++);)	//时钟拉低
-		IFDEF(CONFIG_NPC_WATCHPOINT, watchpoint_difftest();)	//逐拍检查；NPC_STOP不作循环出口，退休沿自然停在指令边界
+		//修改（职责归并）：监视点并入trace_and_difftest改为逐指令（退休沿）粒度——GPR/CSR仅在退休沿
+		//提交，非退休拍求值结果与退休拍相同，触发边界不变（均停在指令边界）；CPI≈5下expr求值开销
+		//降为约1/5，与NEMU及single版粒度对齐
+		// IFDEF(CONFIG_NPC_WATCHPOINT, watchpoint_difftest();)	//逐拍检查；NPC_STOP不作循环出口，退休沿自然停在指令边界
 		if(will_retire) return;		//本条指令已退休且本拍走完：1次exec_once=1条指令
 	}
 }

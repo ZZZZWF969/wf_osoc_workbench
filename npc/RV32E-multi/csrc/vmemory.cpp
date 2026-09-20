@@ -8,6 +8,8 @@
 #include "include/device.h"
 #include "npcpp.hpp"
 
+void difftest_skip_ref();		//difftest.h未声明：DPI访存命中设备时置skip标志用（仅RTL数据访存调用本入口，SDB读内存不经过）
+
 byte_t* vmem = NULL;  //用全局变量方便操作
 
 void create_virtual_memory(){
@@ -112,12 +114,14 @@ void mtrace_retire_print(){
 }
 
 extern "C" word_t mem_read(vaddr_t addr, int len){
+	IFDEF(CONFIG_NPC_DIFFTEST, if(is_io_device(addr)) difftest_skip_ref();)	//RTL数据访存命中设备：置skip标志，退休沿由difftest_step回拷DUT状态并跳过REF执行
 	word_t ret = vmem_read(addr, len);
 	IFDEF(CONFIG_NPC_MTRACE, mtrace_last_read_addr = addr; mtrace_last_read_ret = ret;)
 	return ret;
 }
 
 extern "C" void mem_write(vaddr_t addr, int len, word_t data){
+	IFDEF(CONFIG_NPC_DIFFTEST, if(is_io_device(addr)) difftest_skip_ref();)	//RTL数据访存命中设备：置skip标志，退休沿由difftest_step回拷DUT状态并跳过REF执行
     IFDEF(CONFIG_NPC_MTRACE, mtrace_last_write_addr = addr; mtrace_last_write_data = data; mtrace_last_write_len = len;)
     return vmem_write(addr, len, data);
 }

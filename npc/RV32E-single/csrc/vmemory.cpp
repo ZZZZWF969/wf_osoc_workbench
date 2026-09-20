@@ -7,6 +7,8 @@
 #include "macro.h"
 #include "include/device.h"
 
+void difftest_skip_ref();		//difftest.h未声明：DPI访存命中设备时置skip标志用（仅RTL数据访存调用本入口，SDB读内存不经过）
+
 byte_t* vmem = NULL;  //用全局变量方便操作
 
 void create_virtual_memory(){
@@ -93,11 +95,13 @@ void vmem_write(vaddr_t addr, int len, word_t data){
 }
 
 extern "C" word_t mem_read(vaddr_t addr, int len){
+	IFDEF(CONFIG_NPC_DIFFTEST, if(is_io_device(addr)) difftest_skip_ref();)	//RTL数据访存命中设备：置skip标志，退休沿由difftest_step回拷DUT状态并跳过REF执行
 	IFDEF(CONFIG_NPC_MTRACE, printf("memory read at address: 0x%08x\n",addr);)
     return vmem_read(addr, len);
 }
 
 extern "C" void mem_write(vaddr_t addr, int len, word_t data){
+	IFDEF(CONFIG_NPC_DIFFTEST, if(is_io_device(addr)) difftest_skip_ref();)	//RTL数据访存命中设备：置skip标志，退休沿由difftest_step回拷DUT状态并跳过REF执行
 	IFDEF(CONFIG_NPC_MTRACE, printf("memory write at address: 0x%08x , data: 0x%08x\n",addr, data);)
     return vmem_write(addr, len, data);
 }

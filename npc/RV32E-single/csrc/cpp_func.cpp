@@ -56,12 +56,18 @@ extern "C" void execute(uint64_t n){
 			break;
 		}
 		exec_once();
-		if(is_io_device(top->RAM_ADDR)){
-			// std::cout<<"skip difftest"<<std::endl;
-			IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
-		}else{
-			trace_and_difftest();
-		}
+		//修改（difftest skip判定重构）：此处读取的RAM_ADDR是EXU组合地址，指令退休后已按新寄存器值
+		//重算——load目的寄存器与地址基址寄存器相同时被读回数据覆盖（如__am_gpu_config的lw a5,256(a5)），
+		//设备访问判定漏判，REF误执行设备访问指令触发其无设备映射的断言失败；
+		//skip判定移入vmemory的DPI访存入口mem_read/mem_write（设备访问发生时即刻置标志），
+		//此处无条件进入difftest处理，由difftest_step按标志在退休沿回拷DUT状态并跳过REF执行
+		// if(is_io_device(top->RAM_ADDR)){
+		// 	// std::cout<<"skip difftest"<<std::endl;
+		// 	IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
+		// }else{
+		// 	trace_and_difftest();
+		// }
+		trace_and_difftest();
 	}
 	
 	//HIT GOOD/BAD TRAP
