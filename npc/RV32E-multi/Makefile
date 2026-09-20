@@ -71,7 +71,7 @@ VL_HEADER_FLAGS := --cc \
 	             -I$(VINC_DIR)
 
 # 阶段2参数：完整编译（含--exe，关联所有C++代码）
-VL_FULL_FLAGS  := --cc --exe --build -j $(CPU_CORES) \
+VL_FULL_FLAGS  := --quiet-build --cc --exe --build -j $(CPU_CORES) \
 	             --top-module $(TOP_MODULE) \
 	             --Mdir $(BUILD_DIR) \
 				 --public-flat-rw \
