@@ -64,5 +64,10 @@
 `define MEPC	12'h341
 `define MCAUSE	12'h342
 
+//AXI_RESP（AXI4-Lite响应码；EXOKAY为AXI4独占访问专用，Lite不出现，不定义）
+`define AXI_RESP_OKAY	2'b00
+`define AXI_RESP_SLVERR	2'b10
+`define AXI_RESP_DECERR	2'b11
+
 
 

@@ -1,8 +1,11 @@
 `include "RV32E.vh"
 
+//修改（B通道补全）：下行头注释"无B通道"表述已过时，注释保留；本模块现为完整五通道——
+//AW&W同拍握手经DPI-C写入后，下一拍bvalid+bresp(恒OKAY)确认写响应，bready握手后回空闲。
 //LSU访存单元（AXI4-Lite从设备，无B通道）：接收主设备MEM_CTRL的读写通道握手。
 //AR握手拍经DPI-C读取整字并锁存，下一拍rvalid返回；AW&W同拍握手时按wmask转len经DPI-C写入。
 //wmask为尺寸编码(0001字节/0011半字/1111字)，数据低位对齐写在精确地址上，支持非对齐访问。
+//修改（B通道补全）：下行"R_VALID(忙)期间三者拉低"原仅靠主设备不并发保证（代码未做），本次真正实现并扩展到B_VALID
 //空闲时arready/awready/wready恒高，R_VALID(忙)期间三者拉低；一次仅服务一个请求(outstanding=1)。
 module RV32E_LSU(
 	input					clk,
@@ -15,6 +18,7 @@ module RV32E_LSU(
 	output	reg	[`RV32E_WIDTH-1:0]	rdata,
 	output	reg				rvalid,
 	input					rready,
+	output	[1:0]			rresp,
 	//写地址通道（主设备→LSU）
 	input	[`RV32E_WIDTH-1:0]	awaddr,
 	input					awvalid,
@@ -23,7 +27,11 @@ module RV32E_LSU(
 	input	[`RV32E_WIDTH-1:0]	wdata,
 	input	[3:0]			wmask,
 	input					wvalid,
-	output	reg				wready
+	output	reg				wready,
+	//写响应通道（LSU→主设备）：AW&W握手后确认写完成
+	output	reg				bvalid,
+	input					bready,
+	output	[1:0]			bresp
 );
 
 	import "DPI-C" function int unsigned mem_read(input int unsigned addr, input int len);
@@ -33,9 +41,18 @@ module RV32E_LSU(
 	wire	[31:0]		wmask_to_len = (wmask == 4'b0001) ? 32'd1 :
 	                                  (wmask == 4'b0011) ? 32'd2 : 32'd4;
 
-	reg state;
-	localparam IDLE		= 1'd0;	//空闲，可接收读写请求
-	localparam R_VALID	= 1'd1;	//读数据有效拍，等待上游接收
+	//响应码恒OKAY：DPI内存模型无错误场景，resp为协议形态完整性预留（主设备检查非OKAY即报错停机）
+	assign rresp = `AXI_RESP_OKAY;
+	assign bresp = `AXI_RESP_OKAY;
+
+	//修改（B通道补全）：状态机扩为三态（新增写响应态），state扩为2位
+//	reg state;
+	reg	[1:0]			state;
+//	localparam IDLE		= 1'd0;	//空闲，可接收读写请求
+//	localparam R_VALID	= 1'd1;	//读数据有效拍，等待上游接收
+	localparam IDLE		= 2'd0;	//空闲，可接收读写请求
+	localparam R_VALID	= 2'd1;	//读数据有效拍，等待上游接收
+	localparam B_VALID	= 2'd2;	//写响应有效拍，等待上游接收bready
 
 	always @(posedge clk) begin
 		if(rst) begin
@@ -45,6 +62,7 @@ module RV32E_LSU(
 			rdata <= 0;
 			awready <= 1;
 			wready <= 1;
+			bvalid <= 0;
 		end else begin
 			case (state)
 				IDLE: begin
@@ -53,11 +71,20 @@ module RV32E_LSU(
 						rdata <= mem_read(araddr, 4);
 						rvalid <= 1;
 						arready <= 0;
+						//修改（B通道补全）：读进行中阻塞写通道（原忙期awready/wready仍高，仅靠主设备不并发保证）
+						awready <= 0;
+						wready <= 0;
 						state <= R_VALID;
 					end
 					//写：AW与W同拍握手时经DPI-C写入
 					if(awvalid && awready && wvalid && wready) begin
 						mem_write(awaddr, wmask_to_len, wdata);
+						//修改（B通道补全）：数据已在W握手拍提交，转入写响应态，下一拍bvalid确认
+						bvalid <= 1;
+						arready <= 0;
+						awready <= 0;
+						wready <= 0;
+						state <= B_VALID;
 					end
 				end
 				R_VALID: begin
@@ -65,6 +92,19 @@ module RV32E_LSU(
 					if(rvalid && rready) begin
 						rvalid <= 0;
 						arready <= 1;
+						//修改（B通道补全）：与IDLE读分支的忙期阻塞配对，恢复写通道就绪
+						awready <= 1;
+						wready <= 1;
+						state <= IDLE;
+					end
+				end
+				B_VALID: begin
+					//修改（B通道补全）：写响应被上游接收后回空闲
+					if(bvalid && bready) begin
+						bvalid <= 0;
+						arready <= 1;
+						awready <= 1;
+						wready <= 1;
 						state <= IDLE;
 					end
 				end

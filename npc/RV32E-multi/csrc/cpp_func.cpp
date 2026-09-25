@@ -135,9 +135,16 @@ void cpi_report(){
 	printf("retired %llu instructions in %llu cycles, CPI = %.2f\n",
 		(unsigned long long)sim_retire_count, (unsigned long long)sim_cycle_count, cpi);
 	if(npc_log_file != NULL){
-		//退出状态：NPC_ABORT即difftest比对失败，NPC_END按a0区分GOOD/BAD TRAP
+		//退出状态：NPC_ABORT按abort_reason区分（difftest失败/AXI总线错误），NPC_END按a0区分GOOD/BAD TRAP
+		//修改（B通道补全）：ABORT原因改为动态记录，日志终态可区分总线错误与difftest失败
+		char abort_status[80];
 		const char* status;
-		if(npc_state.state == NPC_ABORT)			status = "ABORT (difftest failed)";
+//		if(npc_state.state == NPC_ABORT)			status = "ABORT (difftest failed)";
+		if(npc_state.state == NPC_ABORT){
+			snprintf(abort_status, sizeof(abort_status), "ABORT (%s)",
+				npc_state.abort_reason ? npc_state.abort_reason : "unknown");
+			status = abort_status;
+		}
 		else if(npc_state.halt_ret == 0)			status = "HIT GOOD TRAP";
 		else										status = "HIT BAD TRAP";
 		fprintf(npc_log_file, "===== NPC exit status =====\n");
@@ -203,4 +210,16 @@ extern "C" void sim_finish(){
 	std::cout<<std::string(ANSI_FG_GREEN)+"ebreak stop simulation"+ANSI_NONE<<std::endl;
 	Verilated::gotFinish(true);
 	return;
+}
+
+//总线错误停机（MEM_CTRL检查resp非OKAY时RTL调用）：打印并以ABORT终止；
+//不置gotFinish——execute循环在状态检查处自然退出（difftest失败同款路径），
+//abort_reason记录原因供cpi_report日志终态区分（static指针常驻，进程退出前有效）
+extern "C" void bus_error(unsigned int resp){
+	std::cout<<std::string(ANSI_FG_RED)+"AXI bus error: resp=0x"
+	<<std::hex<<resp<<" at PC=0x"<<top->PC<<std::string(ANSI_NONE)<<std::endl;
+	static char reason[48];
+	snprintf(reason, sizeof(reason), "AXI bus error (resp=0x%x)", resp);
+	npc_state.abort_reason = reason;
+	set_npc_state(NPC_ABORT, top->PC, 0);
 }

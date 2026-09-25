@@ -59,6 +59,8 @@ static void checkreg(CPU_state *ref_r, vaddr_t pc){
 	if(!isa_check_reg(ref_r, pc)){
 		npc_state.state = NPC_ABORT;
 		npc_state.halt_pc = pc;
+		//修改（B通道补全）：记录ABORT原因，供cpi_report日志终态区分总线错误与比对失败
+		npc_state.abort_reason = "difftest failed";
 	}
 }
 

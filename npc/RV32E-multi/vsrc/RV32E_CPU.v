@@ -402,13 +402,14 @@ module RV32E_CPU(
 //		.read_data		(mem_read_data)
 //	);
 
-	//MEM_CTRL(LSU主设备)↔LSU(从设备)的AXI4-Lite总线连线（无B通道）
+	//MEM_CTRL(LSU主设备)↔LSU(从设备)的AXI4-Lite总线连线（完整五通道）
 	wire					axi_arvalid;
 	wire					axi_arready;
 	wire	[`RV32E_WIDTH-1:0]	axi_araddr;
 	wire					axi_rvalid;
 	wire					axi_rready;
 	wire	[`RV32E_WIDTH-1:0]	axi_rdata;
+	wire	[1:0]			axi_rresp;	//读响应码（恒OKAY，非OKAY即bus_error停机）
 	wire					axi_awvalid;
 	wire					axi_awready;
 	wire	[`RV32E_WIDTH-1:0]	axi_awaddr;
@@ -416,6 +417,10 @@ module RV32E_CPU(
 	wire					axi_wready;
 	wire	[`RV32E_WIDTH-1:0]	axi_wdata;
 	wire	[3:0]			axi_wmask;	//写掩码：尺寸编码0001/0011/1111
+	//写响应通道（LSU→MEM_CTRL）
+	wire					axi_bvalid;
+	wire					axi_bready;
+	wire	[1:0]			axi_bresp;	//写响应码（恒OKAY）
 	wire					mem_ex_ready;	//MEM_CTRL反馈EXU：请求握手完成
 
 	//访存控制单元（AXI4-Lite主设备）：EXU访存请求经AXI通道发往LSU，load数据格式化后送WBU
@@ -439,6 +444,7 @@ module RV32E_CPU(
 		.axi_rdata			(axi_rdata),
 		.axi_rvalid			(axi_rvalid),
 		.axi_rready			(axi_rready),
+		.axi_rresp			(axi_rresp),
 		.axi_awaddr			(axi_awaddr),
 		.axi_awvalid			(axi_awvalid),
 		.axi_awready			(axi_awready),
@@ -446,6 +452,9 @@ module RV32E_CPU(
 		.axi_wmask			(axi_wmask),
 		.axi_wvalid			(axi_wvalid),
 		.axi_wready			(axi_wready),
+		.axi_bvalid			(axi_bvalid),
+		.axi_bready			(axi_bready),
+		.axi_bresp			(axi_bresp),
 		.mem_done_valid			(mem_done_valid),
 		.mem_done_ready			(mem_done_ready),
 		.mem_done_rdata			(mem_done_rdata),
@@ -462,13 +471,17 @@ module RV32E_CPU(
 		.rdata			(axi_rdata),
 		.rvalid			(axi_rvalid),
 		.rready			(axi_rready),
+		.rresp			(axi_rresp),
 		.awaddr			(axi_awaddr),
 		.awvalid		(axi_awvalid),
 		.awready		(axi_awready),
 		.wdata			(axi_wdata),
 		.wmask			(axi_wmask),
 		.wvalid			(axi_wvalid),
-		.wready			(axi_wready)
+		.wready			(axi_wready),
+		.bvalid			(axi_bvalid),
+		.bready			(axi_bready),
+		.bresp			(axi_bresp)
 	);
 
 	//五阶段一拍一阶段串行执行：IF(取指)→ID(译码)→READ(读取)→EX(执行)→WB(写回)，
