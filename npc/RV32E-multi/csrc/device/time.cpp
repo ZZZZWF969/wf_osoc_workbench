@@ -33,6 +33,11 @@ uint64_t get_time(){
 	return now - boot_time;
 }
 
+//开机绝对时间戳（boot_time）的只读访问：供随机数播种等复用，避免重复取时间
+uint64_t get_boot_time(){
+	return boot_time;
+}
+
 void rtc_io_handler(uint32_t offset, int len, bool is_write){
 	assert(RTC_allow(offset));
 	if(!is_write){

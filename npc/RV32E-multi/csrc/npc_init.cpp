@@ -4,6 +4,7 @@
 #include "include/sdb.h"
 #include <generated/autoconf.h>
 #include <time.h>
+#include <stdlib.h>
 
 static char* img_file = NULL;
 static char* diff_so_file = NULL;
@@ -24,6 +25,7 @@ static const uint32_t default_img [5] = {
 void init_difftest(char *ref_so_file, long img_size, int port);
 void batch_mode_run();
 IFDEF(CONFIG_NPC_ITRACE, void init_disasm();)
+uint64_t get_boot_time();	//device/time.cpp：开机绝对时间戳，作随机数种子源
 
 static long load_img(){
 	if (img_file == NULL) {
@@ -114,6 +116,7 @@ static void open_log_file(long img_size){
 void npc_init(int argc, char *argv[]){
 	printf("argc: %d\n", argc);
 	printf("argv: %s\n", *argv);
+	srand((unsigned int)get_boot_time());	//随机数播种：以开机绝对时间戳为种子（高熵），random_delay每次运行序列不同
 	init_regex();
 	IFDEF(CONFIG_NPC_ITRACE, init_disasm();)
 	IFDEF(CONFIG_NPC_WATCHPOINT, init_wp_pool();)

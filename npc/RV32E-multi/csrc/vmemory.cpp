@@ -131,3 +131,8 @@ extern "C" void mem_write(vaddr_t addr, int len, word_t data){
 extern "C" word_t inst_fetch(vaddr_t addr, int len){
     return vmem_read(addr, len);
 }
+
+//随机访存延迟源（LSU经DPI-C调用）：每次读写请求握手时取值，返回[5,25]闭区间的随机延迟拍数
+extern "C" uint8_t random_delay(){
+	return rand() % 21 + 5;
+}
