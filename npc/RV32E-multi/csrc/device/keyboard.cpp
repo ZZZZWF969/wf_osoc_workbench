@@ -78,17 +78,7 @@ void poll_sdl_events(){
 }
 
 void init_keyboard(){
-// 下面有修改：窗口创建已合并到 vga.cpp 的 init_vga()，SDL 由 VGA 统一初始化
-// 	if (SDL_Init(SDL_INIT_VIDEO) != 0){
-// 		printf("SDL init failed: %s\n", SDL_GetError());
-// 		assert(0);
-// 	}
-// 	SDL_Window *window = SDL_CreateWindow("NPC Keyboard", SDL_WINDOWPOS_CENTERED,
-// 										  SDL_WINDOWPOS_CENTERED, 640, 480, 0);
-// 	if (window == NULL){
-// 		printf("SDL create window failed: %s\n", SDL_GetError());
-// 		assert(0);
-// 	}
+//窗口创建已合并到 vga.cpp 的 init_vga()，SDL 由 VGA 统一初始化
 	init_keymap();
 }
 
@@ -98,11 +88,9 @@ static word_t key;
 // guest 读键盘寄存器时的入口：只从队列取事件（SDL 事件由 device_update 周期轮询入队）
 word_t kbd_read(){
 	// 修改：poll 移出（改由 device_update 周期调用），这里只保留拍内防御 + dequeue
-	// poll_sdl_events();
 	if(FIFO_read_allow){
 		key = key_dequeue();
 		FIFO_read_allow = 0;
 	}
 	return key;
-  //   return key_dequeue();
 }

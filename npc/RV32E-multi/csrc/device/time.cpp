@@ -6,14 +6,6 @@ static uint64_t boot_time = 0;
 
 static uint32_t rtc_port[4];
 
-// static uint64_t get_time_internal(){
-// 	// uint64_t us = ioe_read(AM_TIMER_UPTIME).us;
-// 	struct timespec now;
-// 	clock_gettime(CLOCK_MONOTONIC_COARSE, &now);
-// 	uint64_t us = now.tv_nsec * 1000000 + now.tv_nsec / 1000;
-// 	return us;
-// }
-
 static inline int RTC_allow(int offset){
 	return offset == 0 || offset == 4 || offset == 8 || offset == 12;
 }
@@ -68,8 +60,3 @@ word_t rtc_read(paddr_t addr, int len){
 	return rtc_port[offset/4];
 }
 
-// void get_time(){
-// 	time_t timep;
-// 	time(&timep);
-// 	printf("%s", ctime(&timep));
-// }

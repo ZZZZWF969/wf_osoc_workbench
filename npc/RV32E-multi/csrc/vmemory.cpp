@@ -8,7 +8,7 @@
 #include "include/device.h"
 #include "npcpp.hpp"
 
-void difftest_skip_ref();		//difftest.h未声明：DPI访存命中设备时置skip标志用（仅RTL数据访存调用本入口，SDB读内存不经过）
+void difftest_skip_ref();
 
 byte_t* vmem = NULL;  //用全局变量方便操作
 
@@ -89,16 +89,12 @@ void vmem_write(vaddr_t addr, int len, word_t data){
 }
 
 //mtrace捕获区（多周期适配）：DPI层只捕获不打印，exec_once退休拍统一输出。
-//多周期下取指也走本DPI、且load数据读在一拍内会被组合逻辑多次触发，此处打印会
-//刷屏且重复；退休拍打印每指令恰一次且天然不含取指
 word_t mtrace_last_read_addr = 0;
 word_t mtrace_last_read_ret = 0;
 word_t mtrace_last_write_addr = 0;
 word_t mtrace_last_write_data = 0;
 int mtrace_last_write_len = 0;
 
-//退休拍内存踪迹打印：按本条指令opcode决定打印读还是写（捕获区时序上必属本条指令：
-//load数据读全部发生在退休沿之前，store写恰在退休沿内，下一条取指在退休沿之后）
 extern FILE* npc_log_file;		//-l日志文件：访存踪迹与终端同步落盘
 void mtrace_retire_print(){
 	uint32_t opcode = top_inst & 0x7f;
@@ -126,8 +122,7 @@ extern "C" void mem_write(vaddr_t addr, int len, word_t data){
     return vmem_write(addr, len, data);
 }
 
-//取指专用读（退休拍预取配套）：与mem_read同源读vmem，但不进mtrace捕获区，
-//避免预取读与退休沿同拍、污染load指令的读踪迹（取指SRAM经DPI-C调用）
+//取指专用读（退休拍预取配套）：与mem_read同源读vmem，但不进mtrace捕获区
 extern "C" word_t inst_fetch(vaddr_t addr, int len){
     return vmem_read(addr, len);
 }

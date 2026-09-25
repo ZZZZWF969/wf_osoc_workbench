@@ -1,50 +1,5 @@
 `include "RV32E.vh"
 
-//修改（LSU重做AXI化）：原"组合读+posedge直写DPI"的MEM模块整体注释保留以便回溯，
-//本文件已改造为AXI4-Lite主设备（顶层实例名从MEM_IF改为MEM_CTRL），经AXI通道访问LSU从设备。
-//module RV32E_MEM(
-//	input				clk,
-//	input				write_en,
-//	input				read_en,
-//	input				half_write,
-//	input				byte_write,
-//	input		[`RV32E_WIDTH-1:0]	address,
-//	input		[`RV32E_WIDTH-1:0]	write_data,
-//	input		[15:0]	half_data,
-//	input		[7:0]	byte_data,
-//	output	reg	[`RV32E_WIDTH-1:0]	read_data
-//);
-//
-//	import "DPI-C" function int unsigned mem_read(input int unsigned addr, input int len);
-//	import "DPI-C" function void mem_write(input int unsigned addr, input int len, input int unsigned data);
-//
-//	always @(*) begin
-//		read_data = 0;
-//		if(read_en)begin
-//			read_data = mem_read(address, 4);
-//		end
-//	end
-//
-//	always @(posedge clk) begin
-//		if(write_en) begin
-//			if(half_write) begin
-//				mem_write(address, 2, {16'b0,half_data});
-//			end else if(byte_write)begin
-//				mem_write(address, 1, {24'b0,byte_data});
-//			end else begin
-//				mem_write(address, 4, write_data);
-//			end
-//		end
-//	end
-//
-//endmodule
-
-//修改（B通道补全）：下行头注释"无B通道"表述已过时，注释保留；现含写响应通道与resp检查——
-//写请求AW&W握手后进WRITE_WAIT，bvalid&&bready拍即退休拍；R/B握手拍resp非OKAY即bus_error停机。
-//访存控制单元（AXI4-Lite主设备，无B通道）：接收EXU的访存请求，经AXI通道发往LSU。
-//IDLE拍组合驱动valid（只依赖请求存在，不依赖对侧ready，AXI合规）；
-//读请求AR握手后进READ_WAIT等rvalid，R握手拍即退休拍；写请求AW&W握手拍即完成（无B通道）。
-//操作数不锁存：EX_reg保持至退休是既有契约（原DSRAM设计同依赖），组合派生自ex_*信号。
 module RV32E_MEM(
 	input					clk,
 	input					rst,
@@ -95,11 +50,7 @@ module RV32E_MEM(
 	wire				ar_handshake = axi_arvalid & axi_arready;
 	wire				write_handshake = axi_awvalid & axi_awready & axi_wvalid & axi_wready;
 
-	//修改（B通道补全）：状态机扩为三态（新增写等待态），state扩为2位
-//	reg state;
 	reg	[1:0]			state;
-//	localparam IDLE		= 1'd0;	//空闲：可发起新的访存请求
-//	localparam READ_WAIT	= 1'd1;	//读等待：AR已握手，等LSU返回rvalid
 	localparam IDLE		= 2'd0;	//空闲：可发起新的访存请求
 	localparam READ_WAIT	= 2'd1;	//读等待：AR已握手，等LSU返回rvalid
 	localparam WRITE_WAIT	= 2'd2;	//写等待：AW&W已握手，等LSU返回bvalid
@@ -190,12 +141,9 @@ module RV32E_MEM(
 
 	//读数据接收就绪：读等待拍且WBU可接收完成数据
 	assign axi_rready = (state == READ_WAIT) & mem_done_ready;
-	//修改（B通道补全）：写响应接收就绪，与rready对称（写等待拍且WBU可接收）
+	//B通道补全：写响应接收就绪，与rready对称（写等待拍且WBU可接收）
 	assign axi_bready = (state == WRITE_WAIT) & mem_done_ready;
 
-	//访存完成：写=AW&W握手拍，读=R握手拍（该拍即WBU退休拍）
-//	assign mem_done_valid = write_handshake | (axi_rvalid & axi_rready);
-	//修改（B通道补全）：写完成改挂B握手拍，store退休延后一拍（标准写响应拍，CPI预期回升约0.1）
 	assign mem_done_valid = (axi_bvalid & axi_bready) | (axi_rvalid & axi_rready);
 	//EXU释放：请求握手完成（读=AR握手后交由READ_WAIT跟踪，写=AW&W握手即数据收讫）
 	assign mem_ex_ready = ar_handshake | write_handshake;

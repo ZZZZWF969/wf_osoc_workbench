@@ -92,14 +92,6 @@ module RV32E_CPU(
 	wire	[11:0]			csr_rrd;
 	wire	[`RV32E_WIDTH-1:0]	csr_rdata;
 
-	//修改（LSU重做AXI化）：DSRAM请求总线已由MEM_CTRL(LSU主设备)内部产生，声明注释保留以便回溯
-//	wire					dsram_req_valid;
-//	wire					dsram_req_ready;
-//	wire	[`RV32E_WIDTH-1:0]	dsram_req_addr;
-//	wire					dsram_req_ren;
-//	wire					dsram_req_wen;
-//	wire	[1:0]		dsram_req_wsize;	//写宽度：00字节 01半字 10字
-//	wire	[`RV32E_WIDTH-1:0]	dsram_req_wdata;
 	//访存完成总线（MEM_CTRL→WBU）
 	wire					mem_done_valid;
 	wire					mem_done_ready;
@@ -110,8 +102,6 @@ module RV32E_CPU(
 	wire					wbu_ex_ready;
 	wire					ex_ready_mux;
 	wire	[`RV32E_WIDTH-1:0]	wbu_reg_data;
-	//修改（LSU重做AXI化）：load格式化已迁入RV32E_MEM(MEM_CTRL)，声明注释保留以便回溯
-//	reg		[`RV32E_WIDTH-1:0]	load_fmt_data;	//load读数据按op格式化
 
 	//WBU写回输出（去寄存器堆/CSR）
 	wire					reg_wen_wb;
@@ -124,24 +114,12 @@ module RV32E_CPU(
 	wire	[`RV32E_WIDTH-1:0]	csr_pc_wb;
 
 	assign PC = programe_counter;
-	//修改（LSU重做AXI化）：DSRAM请求路由已由MEM_CTRL(LSU主设备)取代，assign注释保留以便回溯
-//	assign dsram_req_valid = ex_valid & ex_mem_req;
-//	assign dsram_req_addr  = ex_mem_addr;
-//	assign dsram_req_ren   = ex_mem_ren;
-//	assign dsram_req_wen   = ex_mem_word_wen | ex_mem_half_wen | ex_mem_byte_wen;
-//	assign dsram_req_wsize = ex_mem_byte_wen ? 2'b00 : ex_mem_half_wen ? 2'b01 : 2'b10;
-//	assign dsram_req_wdata = ex_mem_byte_wen ? {24'b0, ex_mem_byte_data} :
-//	                         ex_mem_half_wen ? {16'b0, ex_mem_half_data} : ex_mem_write_data;
 	//写回输入路由：访存指令用MEM_CTRL完成信号，非访存指令旁路EX_reg
 	assign wbu_bypass_valid = ex_valid & ~ex_mem_req;
 	assign wbu_in_valid     = ex_mem_req ? mem_done_valid : wbu_bypass_valid;
-	//修改（LSU重做AXI化）：load格式化后数据改由MEM_CTRL的mem_done_rdata提供
-//	assign wbu_reg_data     = ex_mem_ren ? load_fmt_data : ex_reg_write_data;
 	assign wbu_reg_data     = ex_mem_ren ? mem_done_rdata : ex_reg_write_data;
 	assign mem_done_ready   = 1'b1;		//WBU写回拍恒可接收
 	//EXU下游就绪：访存看MEM_CTRL请求握手完成，非访存看WBU
-	//修改（LSU重做AXI化）：请求就绪改由MEM_CTRL的mem_ex_ready反馈
-//	assign ex_ready_mux     = ex_mem_req ? dsram_req_ready : wbu_ex_ready;
 	assign ex_ready_mux     = ex_mem_req ? mem_ex_ready : wbu_ex_ready;
 
 	//RAM观察端口（供csrc踪迹）：请求拍呈现真实访存信号（取自AXI主口）
@@ -150,16 +128,6 @@ module RV32E_CPU(
 	assign RAM_WEN   = axi_awvalid;
 	assign RAM_WDATA = axi_wdata;
 
-	//修改（LSU重做AXI化）：load格式化逻辑已迁入RV32E_MEM(MEM_CTRL)，原逻辑注释保留以便回溯
-//	always @(*) begin
-//		case (ex_exu_op)
-//			`LB:	load_fmt_data = {{24{mem_done_rdata[7]}}, mem_done_rdata[7:0]};
-//			`LBU:	load_fmt_data = {24'b0, mem_done_rdata[7:0]};
-//			`LH:	load_fmt_data = {{16{mem_done_rdata[15]}}, mem_done_rdata[15:0]};
-//			`LHU:	load_fmt_data = {16'b0, mem_done_rdata[15:0]};
-//			default:load_fmt_data = mem_done_rdata;
-//		endcase
-//	end
 
 	//IFU-SRAM取指总线（IFU发读请求，SRAM延迟一拍返回指令）
 	wire					sram_ren;
@@ -342,14 +310,6 @@ module RV32E_CPU(
 		.ex_pc				(ex_pc),
 		.ex_jump_sig		(ex_jump_sig),
 		.ex_jump_addr		(ex_jump_addr),
-//		//修改（访存SRAM化）：WBU不再承担访存职责，以下连接注释保留以便回溯
-//		.ex_mem_addr		(ex_mem_addr),
-//		.ex_mem_write_data	(ex_mem_write_data),
-//		.ex_mem_half_data	(ex_mem_half_data),
-//		.ex_mem_byte_data	(ex_mem_byte_data),
-//		.ex_mem_word_wen	(ex_mem_word_wen),
-//		.ex_mem_half_wen	(ex_mem_half_wen),
-//		.ex_mem_byte_wen	(ex_mem_byte_wen),
 		.reg_wen			(reg_wen_wb),
 		.reg_wrd			(reg_wrd_wb),
 		.reg_write_data		(reg_write_data_wb),
@@ -358,50 +318,10 @@ module RV32E_CPU(
 		.csr_write_data		(csr_write_data_wb),
 		.csr_trap_out		(csr_trap_wb),
 		.csr_pc				(csr_pc_wb),
-//		//修改（访存SRAM化）：WBU访存输出不再使用，以下连接注释保留以便回溯
-//		.mem_wen			(wbu_mem_wen),
-//		.mem_half_wen		(wbu_mem_half_wen),
-//		.mem_byte_wen		(wbu_mem_byte_wen),
-//		.mem_addr_out		(wbu_mem_addr),
-//		.mem_write_data		(wbu_mem_write_data),
-//		.mem_half_data		(wbu_mem_half_data),
-//		.mem_byte_data		(wbu_mem_byte_data),
 		.jump_sig			(jump_sig),
 		.jump_addr_out		(jump_addr),
 		.finish				(finish)
 	);
-
-	//修改（LSU重做AXI化）：DSRAM已被MEM_CTRL+LSU(AXI4-Lite)取代，实例注释保留以便回溯
-	//原功能：SRAM式时序访存，请求拍收地址与信号，下一拍(完成拍)返回数据/写完成
-//	RV32E_DSRAM DSRAM(
-//		.clk			(clk),
-//		.rst			(rst),
-//		.mem_req_valid	(dsram_req_valid),
-//		.mem_req_ready	(dsram_req_ready),
-//		.mem_req_addr	(dsram_req_addr),
-//		.mem_req_ren	(dsram_req_ren),
-//		.mem_req_wen	(dsram_req_wen),
-//		.mem_req_wsize	(dsram_req_wsize),
-//		.mem_req_wdata	(dsram_req_wdata),
-//		.mem_done_valid	(mem_done_valid),
-//		.mem_done_ready	(mem_done_ready),
-//		.mem_done_rdata	(mem_done_rdata)
-//	);
-
-//	//修改（访存SRAM化）：原组合读+posedge写的MEM模块已被RV32E_DSRAM取代，实例注释保留以便回溯
-//	RV32E_MEM MEM_IF(
-//		.clk			(clk),
-//		.write_en		(wbu_mem_wen),
-//		.read_en		(mem_read_en),
-//		.half_write		(wbu_mem_half_wen),
-//		.byte_write		(wbu_mem_byte_wen),
-//		.address		(wbu_mem_wen ? wbu_mem_addr : mem_addr_comb),
-//		.write_data		(wbu_mem_write_data),
-//		.half_data		(wbu_mem_half_data),
-//		.byte_data		(wbu_mem_byte_data),
-//		.read_data		(mem_read_data)
-//	);
-
 	//MEM_CTRL(LSU主设备)↔LSU(从设备)的AXI4-Lite总线连线（完整五通道）
 	wire					axi_arvalid;
 	wire					axi_arready;
@@ -483,10 +403,5 @@ module RV32E_CPU(
 		.bready			(axi_bready),
 		.bresp			(axi_bresp)
 	);
-
-	//五阶段一拍一阶段串行执行：IF(取指)→ID(译码)→READ(读取)→EX(执行)→WB(写回)，
-	//模块间以valid/ready总线握手；读取单元(RDU)用ID_reg的读地址读寄存器堆/CSR，
-	//读出的操作数与控制信号锁存进READ_reg后交EXU执行
-	//修改（SRAM取指改造）：IF扩为"请求拍+返回拍"两拍（经SRAM取指），全流程6拍/指令
 
 endmodule
