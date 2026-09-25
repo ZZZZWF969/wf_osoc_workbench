@@ -112,7 +112,11 @@ void exec_once(){
 				sim_retire_count++;			//ebreak计入退休指令数，使CPI统计完整
 				IFDEF(CONFIG_NPC_ITRACE, itrace_inst(top_ir_pc, top_inst);)
 			}
-			npctrap(top->PC, top_gpr[10]);
+//			npctrap(top->PC, top_gpr[10]);
+			//修改（总线看门狗）：超时已置NPC_ABORT并带abort_reason，npctrap会覆盖为END导致误报GOOD/BAD TRAP
+			if(npc_state.state != NPC_ABORT){
+				npctrap(top->PC, top_gpr[10]);
+			}
 			std::cout<<std::string(ANSI_FG_YELLOW)+"get finish signal by DPI-C at PC=0x"
 			<<std::hex<<top->PC<<std::string(ANSI_NONE)
 			<<std::endl;
@@ -222,4 +226,18 @@ extern "C" void bus_error(unsigned int resp){
 	snprintf(reason, sizeof(reason), "AXI bus error (resp=0x%x)", resp);
 	npc_state.abort_reason = reason;
 	set_npc_state(NPC_ABORT, top->PC, 0);
+}
+
+//总线超时停机（MEM_CTRL看门狗触发）：等待ready/rvalid/bvalid超阈值，从设备无响应。
+//与bus_error不同：无退休沿可依托，须置gotFinish让exec_once当拍退出（npctrap有ABORT保护，不会被覆盖成END）
+extern "C" void bus_timeout(unsigned int channel){
+	const char* what = channel == 0 ? "waiting rvalid" :
+	                   channel == 1 ? "waiting bvalid" : "waiting ar/aw/w ready";
+	std::cout<<std::string(ANSI_FG_RED)+"AXI bus timeout: "+what+" at PC=0x"
+	<<std::hex<<top->PC<<std::string(ANSI_NONE)<<std::endl;
+	static char reason[48];
+	snprintf(reason, sizeof(reason), "AXI bus timeout (%s)", what);
+	npc_state.abort_reason = reason;
+	set_npc_state(NPC_ABORT, top->PC, 0);
+	Verilated::gotFinish(true);
 }

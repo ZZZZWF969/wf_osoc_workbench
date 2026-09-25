@@ -88,6 +88,7 @@ module RV32E_MEM(
 );
 
 	import "DPI-C" function void bus_error(input int unsigned resp);
+	import "DPI-C" function void bus_timeout(input int unsigned channel);
 
 	//请求与握手信号
 	wire				req_wen = ex_mem_word_wen | ex_mem_half_wen | ex_mem_byte_wen;
@@ -103,9 +104,14 @@ module RV32E_MEM(
 	localparam READ_WAIT	= 2'd1;	//读等待：AR已握手，等LSU返回rvalid
 	localparam WRITE_WAIT	= 2'd2;	//写等待：AW&W已握手，等LSU返回bvalid
 
+	//修改（总线看门狗）：等待拍计数，超阈值判定从设备无响应，调DPI报错停机（真实SoC的pbus timeout语义）
+	reg	[31:0]			watchdog_cnt;
+	localparam			AXI_WATCHDOG_LIMIT = 32'd1000;	//等待阈值(拍)：DPI零延迟下正常等待≤1拍，余量留给未来真从设备
+
 	always @(posedge clk) begin
 		if(rst) begin
 			state <= IDLE;
+			watchdog_cnt <= 0;
 		end else begin
 			case (state)
 				IDLE: begin
@@ -116,6 +122,16 @@ module RV32E_MEM(
 					if(write_handshake) begin
 						state <= WRITE_WAIT;
 					end
+					//修改（总线看门狗）：请求已呈现但未被接收（从设备不给ready）时计数，超阈值报超时
+					if((axi_arvalid || axi_awvalid) && !ar_handshake && !write_handshake) begin
+						if(watchdog_cnt >= AXI_WATCHDOG_LIMIT - 1) begin
+							bus_timeout(32'd2);
+						end else begin
+							watchdog_cnt <= watchdog_cnt + 1;
+						end
+					end else begin
+						watchdog_cnt <= 0;
+					end
 				end
 				READ_WAIT: begin
 					if(axi_rvalid && axi_rready) begin
@@ -123,6 +139,15 @@ module RV32E_MEM(
 						//修改（resp检查）：读响应非OKAY，报错停机（NPC_ABORT）
 						if(axi_rresp != `AXI_RESP_OKAY) begin
 							bus_error({30'b0, axi_rresp});
+						end
+						//修改（总线看门狗）：等待结束清零
+						watchdog_cnt <= 0;
+					end else begin
+						//修改（总线看门狗）：等rvalid无响应计数，超阈值报超时
+						if(watchdog_cnt >= AXI_WATCHDOG_LIMIT - 1) begin
+							bus_timeout(32'd0);
+						end else begin
+							watchdog_cnt <= watchdog_cnt + 1;
 						end
 					end
 				end
@@ -133,6 +158,15 @@ module RV32E_MEM(
 						//修改（resp检查）：写响应非OKAY，报错停机（NPC_ABORT）
 						if(axi_bresp != `AXI_RESP_OKAY) begin
 							bus_error({30'b0, axi_bresp});
+						end
+						//修改（总线看门狗）：等待结束清零
+						watchdog_cnt <= 0;
+					end else begin
+						//修改（总线看门狗）：等bvalid无响应计数，超阈值报超时
+						if(watchdog_cnt >= AXI_WATCHDOG_LIMIT - 1) begin
+							bus_timeout(32'd1);
+						end else begin
+							watchdog_cnt <= watchdog_cnt + 1;
 						end
 					end
 				end
