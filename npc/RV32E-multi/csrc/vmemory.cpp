@@ -127,7 +127,7 @@ extern "C" word_t inst_fetch(vaddr_t addr, int len){
     return vmem_read(addr, len);
 }
 
-//随机访存延迟源（LSU经DPI-C调用）：每次读写请求握手时取值，返回[5,25]闭区间的随机延迟拍数
-extern "C" uint8_t random_delay(){
-	return rand() % 21 + 5;
+//随机访存延迟源（LSU经DPI-C调用）：is_fetch非0为取指访问，延迟[5,10]拍；数据访问延迟[5,25]拍
+extern "C" uint8_t random_delay(unsigned int is_fetch){
+	return is_fetch ? rand() % 6 + 5 : rand() % 21 + 5;
 }

@@ -182,8 +182,11 @@ extern "C" void bus_error(unsigned int resp){
 //总线超时停机（MEM_CTRL看门狗触发）：等待ready/rvalid/bvalid超阈值，从设备无响应。
 //与bus_error不同：无退休沿可依托，须置gotFinish让exec_once当拍退出（npctrap有ABORT保护，不会被覆盖成END）
 extern "C" void bus_timeout(unsigned int channel){
+	//channel：0=数据等rvalid 1=数据等bvalid 2=数据等ready 3=取指等rvalid 4=取指等arready
 	const char* what = channel == 0 ? "waiting rvalid" :
-	                   channel == 1 ? "waiting bvalid" : "waiting ar/aw/w ready";
+	                   channel == 1 ? "waiting bvalid" :
+	                   channel == 2 ? "waiting ar/aw/w ready" :
+	                   channel == 3 ? "waiting ifu rvalid" : "waiting ifu arready";
 	std::cout<<std::string(ANSI_FG_RED)+"AXI bus timeout: "+what+" at PC=0x"
 	<<std::hex<<top->PC<<std::string(ANSI_NONE)<<std::endl;
 	static char reason[48];

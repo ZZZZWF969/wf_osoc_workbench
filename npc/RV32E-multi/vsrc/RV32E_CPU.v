@@ -129,10 +129,20 @@ module RV32E_CPU(
 	assign RAM_WDATA = axi_wdata;
 
 
-	//IFU-SRAM取指总线（IFU发读请求，SRAM延迟一拍返回指令）
-	wire					sram_ren;
-	wire	[`RV32E_WIDTH-1:0]	sram_addr;
-	wire	[`RV32E_WIDTH-1:0]	sram_rdata;
+	//IFU(取指master)↔ARB(仲裁器)的AXI4-Lite只读总线连线
+	wire					ifu_arvalid;
+	wire					ifu_arready;
+	wire	[`RV32E_WIDTH-1:0]	ifu_araddr;
+	wire	[2:0]			ifu_arprot;	//恒3'b100：bit2=1取指访问
+	wire					ifu_rvalid;
+	wire					ifu_rready;
+	wire	[`RV32E_WIDTH-1:0]	ifu_rdata;
+	wire	[1:0]			ifu_rresp;
+
+	//修改（取指AXI化并入统一总线）：原IFU-SRAM取指总线注释保留以便回溯
+//	wire					sram_ren;
+//	wire	[`RV32E_WIDTH-1:0]	sram_addr;
+//	wire	[`RV32E_WIDTH-1:0]	sram_rdata;
 
 	RV32E_IFU IFU(
 		.clk			(clk),
@@ -144,19 +154,24 @@ module RV32E_CPU(
 		.if_valid		(if_valid),
 		.INST			(INST),
 		.pc_count		(programe_counter),
-		.sram_ren		(sram_ren),
-		.sram_addr		(sram_addr),
-		.sram_rdata		(sram_rdata)
+		.arvalid		(ifu_arvalid),
+		.araddr			(ifu_araddr),
+		.arprot			(ifu_arprot),
+		.arready		(ifu_arready),
+		.rdata			(ifu_rdata),
+		.rvalid			(ifu_rvalid),
+		.rready			(ifu_rready),
+		.rresp			(ifu_rresp)
 	);
 
-	//取指SRAM：接收IFU读请求，内部经DPI-C读取，延迟一拍返回指令
-	RV32E_SRAM SRAM_IF(
-		.clk			(clk),
-		.rst			(rst),
-		.sram_ren		(sram_ren),
-		.sram_addr		(sram_addr),
-		.sram_rdata		(sram_rdata)
-	);
+	//修改（取指AXI化并入统一总线）：取指SRAM已由统一从设备LSU承担，实例注释保留以便回溯
+//	RV32E_SRAM SRAM_IF(
+//		.clk			(clk),
+//		.rst			(rst),
+//		.sram_ren		(sram_ren),
+//		.sram_addr		(sram_addr),
+//		.sram_rdata		(sram_rdata)
+//	);
 
 	RV32E_IDU IDU(
 		.clk			(clk),
@@ -322,10 +337,11 @@ module RV32E_CPU(
 		.jump_addr_out		(jump_addr),
 		.finish				(finish)
 	);
-	//MEM_CTRL(LSU主设备)↔LSU(从设备)的AXI4-Lite总线连线（完整五通道）
+	//MEM_CTRL(数据master)↔ARB(仲裁器)的AXI4-Lite总线连线（m1侧，完整五通道）
 	wire					axi_arvalid;
 	wire					axi_arready;
 	wire	[`RV32E_WIDTH-1:0]	axi_araddr;
+	wire	[2:0]			axi_arprot;	//恒3'b000：数据访问
 	wire					axi_rvalid;
 	wire					axi_rready;
 	wire	[`RV32E_WIDTH-1:0]	axi_rdata;
@@ -361,6 +377,7 @@ module RV32E_CPU(
 		.axi_araddr			(axi_araddr),
 		.axi_arvalid			(axi_arvalid),
 		.axi_arready			(axi_arready),
+		.axi_arprot			(axi_arprot),
 		.axi_rdata			(axi_rdata),
 		.axi_rvalid			(axi_rvalid),
 		.axi_rready			(axi_rready),
@@ -381,27 +398,98 @@ module RV32E_CPU(
 		.mem_ex_ready			(mem_ex_ready)
 	);
 
-	//LSU访存单元（AXI4-Lite从设备）：经DPI-C完成实际读写
+	//ARB(仲裁器)↔LSU(统一从设备)的AXI4-Lite总线连线（从设备侧，五通道+arprot）
+	wire					s_arvalid;
+	wire					s_arready;
+	wire	[`RV32E_WIDTH-1:0]	s_araddr;
+	wire	[2:0]			s_arprot;
+	wire					s_rvalid;
+	wire					s_rready;
+	wire	[`RV32E_WIDTH-1:0]	s_rdata;
+	wire	[1:0]			s_rresp;
+	wire					s_awvalid;
+	wire					s_awready;
+	wire	[`RV32E_WIDTH-1:0]	s_awaddr;
+	wire					s_wvalid;
+	wire					s_wready;
+	wire	[`RV32E_WIDTH-1:0]	s_wdata;
+	wire	[3:0]			s_wmask;
+	wire					s_bvalid;
+	wire					s_bready;
+	wire	[1:0]			s_bresp;
+
+	//AXI总线仲裁器：IFU(m0,只读)与MEM_CTRL(m1)经此访问统一从设备LSU
+	RV32E_ARB ARB(
+		.clk			(clk),
+		.rst			(rst),
+		.m0_araddr		(ifu_araddr),
+		.m0_arvalid		(ifu_arvalid),
+		.m0_arprot		(ifu_arprot),
+		.m0_arready		(ifu_arready),
+		.m0_rready		(ifu_rready),
+		.m0_rdata		(ifu_rdata),
+		.m0_rvalid		(ifu_rvalid),
+		.m0_rresp		(ifu_rresp),
+		.m1_araddr		(axi_araddr),
+		.m1_arvalid		(axi_arvalid),
+		.m1_arprot		(axi_arprot),
+		.m1_arready		(axi_arready),
+		.m1_rready		(axi_rready),
+		.m1_rdata		(axi_rdata),
+		.m1_rvalid		(axi_rvalid),
+		.m1_rresp		(axi_rresp),
+		.m1_awaddr		(axi_awaddr),
+		.m1_awvalid		(axi_awvalid),
+		.m1_awready		(axi_awready),
+		.m1_wdata		(axi_wdata),
+		.m1_wmask		(axi_wmask),
+		.m1_wvalid		(axi_wvalid),
+		.m1_wready		(axi_wready),
+		.m1_bvalid		(axi_bvalid),
+		.m1_bready		(axi_bready),
+		.m1_bresp		(axi_bresp),
+		.s_araddr		(s_araddr),
+		.s_arvalid		(s_arvalid),
+		.s_arprot		(s_arprot),
+		.s_arready		(s_arready),
+		.s_rdata		(s_rdata),
+		.s_rvalid		(s_rvalid),
+		.s_rready		(s_rready),
+		.s_rresp		(s_rresp),
+		.s_awaddr		(s_awaddr),
+		.s_awvalid		(s_awvalid),
+		.s_awready		(s_awready),
+		.s_wdata		(s_wdata),
+		.s_wmask		(s_wmask),
+		.s_wvalid		(s_wvalid),
+		.s_wready		(s_wready),
+		.s_bvalid		(s_bvalid),
+		.s_bready		(s_bready),
+		.s_bresp		(s_bresp)
+	);
+
+	//统一访存从设备（AXI4-Lite）：IFU取指与MEM_CTRL数据访问共用，按ARPROT[2]分派DPI与延迟档
 	RV32E_LSU LSU(
 		.clk			(clk),
 		.rst			(rst),
-		.araddr			(axi_araddr),
-		.arvalid		(axi_arvalid),
-		.arready		(axi_arready),
-		.rdata			(axi_rdata),
-		.rvalid			(axi_rvalid),
-		.rready			(axi_rready),
-		.rresp			(axi_rresp),
-		.awaddr			(axi_awaddr),
-		.awvalid		(axi_awvalid),
-		.awready		(axi_awready),
-		.wdata			(axi_wdata),
-		.wmask			(axi_wmask),
-		.wvalid			(axi_wvalid),
-		.wready			(axi_wready),
-		.bvalid			(axi_bvalid),
-		.bready			(axi_bready),
-		.bresp			(axi_bresp)
+		.araddr			(s_araddr),
+		.arvalid		(s_arvalid),
+		.arprot			(s_arprot),
+		.arready		(s_arready),
+		.rdata			(s_rdata),
+		.rvalid			(s_rvalid),
+		.rready			(s_rready),
+		.rresp			(s_rresp),
+		.awaddr			(s_awaddr),
+		.awvalid		(s_awvalid),
+		.awready		(s_awready),
+		.wdata			(s_wdata),
+		.wmask			(s_wmask),
+		.wvalid			(s_wvalid),
+		.wready			(s_wready),
+		.bvalid			(s_bvalid),
+		.bready			(s_bready),
+		.bresp			(s_bresp)
 	);
 
 endmodule

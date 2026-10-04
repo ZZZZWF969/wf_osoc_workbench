@@ -15,10 +15,11 @@ module RV32E_MEM(
 	input	[15:0]			ex_mem_half_data,
 	input	[7:0]			ex_mem_byte_data,
 	input	[5:0]			ex_exu_op,
-	//下游：AXI4-Lite主口（发往LSU）
+	//下游：AXI4-Lite主口（经仲裁器发往LSU）
 	output	[`RV32E_WIDTH-1:0]	axi_araddr,
 	output					axi_arvalid,
 	input					axi_arready,
+	output	[2:0]			axi_arprot,	//数据访问（bit2=0）
 	input	[`RV32E_WIDTH-1:0]	axi_rdata,
 	input					axi_rvalid,
 	output					axi_rready,
@@ -131,6 +132,7 @@ module RV32E_MEM(
 	//AXI主口组合驱动：请求出现拍即可能握手，valid不依赖对侧ready
 	assign axi_arvalid = ex_valid & ex_mem_req & ex_mem_ren;
 	assign axi_araddr  = ex_mem_addr;
+	assign axi_arprot  = 3'b000;	//数据访问（ARPROT[2]=0，从设备据此走mem_read与数据延迟档）
 	assign axi_awvalid = ex_valid & ex_mem_req & req_wen;
 	assign axi_awaddr  = ex_mem_addr;
 	assign axi_wvalid  = axi_awvalid;
