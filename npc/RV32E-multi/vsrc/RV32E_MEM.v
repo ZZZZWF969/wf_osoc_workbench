@@ -1,164 +1,64 @@
 `include "RV32E.vh"
 
-module RV32E_MEM(
-	input					clk,
-	input					rst,
-	//上游：EXU的EX_reg输出（请求拍有效，握手前保持稳定）
-	input					ex_valid,
-	input					ex_mem_req,
-	input					ex_mem_ren,
-	input	[`RV32E_WIDTH-1:0]	ex_mem_addr,
-	input					ex_mem_word_wen,
-	input					ex_mem_half_wen,
-	input					ex_mem_byte_wen,
-	input	[`RV32E_WIDTH-1:0]	ex_mem_write_data,
-	input	[15:0]			ex_mem_half_data,
-	input	[7:0]			ex_mem_byte_data,
-	input	[5:0]			ex_exu_op,
-	//下游：AXI4-Lite主口（经仲裁器发往LSU）
-	output	[`RV32E_WIDTH-1:0]	axi_araddr,
-	output					axi_arvalid,
-	input					axi_arready,
-	output	[2:0]			axi_arprot,	//数据访问（bit2=0）
-	input	[`RV32E_WIDTH-1:0]	axi_rdata,
-	input					axi_rvalid,
-	output					axi_rready,
-	input	[1:0]			axi_rresp,
-	output	[`RV32E_WIDTH-1:0]	axi_awaddr,
-	output					axi_awvalid,
-	input					axi_awready,
-	output	[`RV32E_WIDTH-1:0]	axi_wdata,
-	output	[3:0]			axi_wmask,
-	output					axi_wvalid,
-	input					axi_wready,
-	//写响应通道（LSU→MEM_CTRL）
-	input					axi_bvalid,
-	output					axi_bready,
-	input	[1:0]			axi_bresp,
-	//对WBU：访存完成（读=R握手拍，写=B握手拍）
-	output					mem_done_valid,
-	input					mem_done_ready,
-	output	reg	[`RV32E_WIDTH-1:0]	mem_done_rdata,
-	//对EXU：请求握手完成（读=AR握手，写=AW&W握手）
-	output					mem_ex_ready
-);
-
-	import "DPI-C" function void bus_error(input int unsigned resp);
-	import "DPI-C" function void bus_timeout(input int unsigned channel);
-
-	//请求与握手信号
-	wire				req_wen = ex_mem_word_wen | ex_mem_half_wen | ex_mem_byte_wen;
-	wire				ar_handshake = axi_arvalid & axi_arready;
-	wire				write_handshake = axi_awvalid & axi_awready & axi_wvalid & axi_wready;
-
-	reg	[1:0]			state;
-	localparam IDLE		= 2'd0;	//空闲：可发起新的访存请求
-	localparam READ_WAIT	= 2'd1;	//读等待：AR已握手，等LSU返回rvalid
-	localparam WRITE_WAIT	= 2'd2;	//写等待：AW&W已握手，等LSU返回bvalid
-
-	//修改（总线看门狗）：等待拍计数，超阈值判定从设备无响应，调DPI报错停机（真实SoC的pbus timeout语义）
-	reg	[31:0]			watchdog_cnt;
-	localparam			AXI_WATCHDOG_LIMIT = 32'd1000;	//等待阈值(拍)：DPI零延迟下正常等待≤1拍，余量留给未来真从设备
-
-	always @(posedge clk) begin
-		if(rst) begin
-			state <= IDLE;
-			watchdog_cnt <= 0;
-		end else begin
-			case (state)
-				IDLE: begin
-					if(ar_handshake) begin
-						state <= READ_WAIT;
-					end
-					//修改（B通道补全）：写请求转入写等待，完成判定改挂B握手
-					if(write_handshake) begin
-						state <= WRITE_WAIT;
-					end
-					//修改（总线看门狗）：请求已呈现但未被接收（从设备不给ready）时计数，超阈值报超时
-					if((axi_arvalid || axi_awvalid) && !ar_handshake && !write_handshake) begin
-						if(watchdog_cnt >= AXI_WATCHDOG_LIMIT - 1) begin
-							bus_timeout(32'd2);
-						end else begin
-							watchdog_cnt <= watchdog_cnt + 1;
-						end
-					end else begin
-						watchdog_cnt <= 0;
-					end
-				end
-				READ_WAIT: begin
-					if(axi_rvalid && axi_rready) begin
-						state <= IDLE;
-						//修改（resp检查）：读响应非OKAY，报错停机（NPC_ABORT）
-						if(axi_rresp != `AXI_RESP_OKAY) begin
-							bus_error({30'b0, axi_rresp});
-						end
-						//修改（总线看门狗）：等待结束清零
-						watchdog_cnt <= 0;
-					end else begin
-						//修改（总线看门狗）：等rvalid无响应计数，超阈值报超时
-						if(watchdog_cnt >= AXI_WATCHDOG_LIMIT - 1) begin
-							bus_timeout(32'd0);
-						end else begin
-							watchdog_cnt <= watchdog_cnt + 1;
-						end
-					end
-				end
-				WRITE_WAIT: begin
-					//修改（B通道补全）：写响应握手拍即退休拍
-					if(axi_bvalid && axi_bready) begin
-						state <= IDLE;
-						//修改（resp检查）：写响应非OKAY，报错停机（NPC_ABORT）
-						if(axi_bresp != `AXI_RESP_OKAY) begin
-							bus_error({30'b0, axi_bresp});
-						end
-						//修改（总线看门狗）：等待结束清零
-						watchdog_cnt <= 0;
-					end else begin
-						//修改（总线看门狗）：等bvalid无响应计数，超阈值报超时
-						if(watchdog_cnt >= AXI_WATCHDOG_LIMIT - 1) begin
-							bus_timeout(32'd1);
-						end else begin
-							watchdog_cnt <= watchdog_cnt + 1;
-						end
-					end
-				end
-				default: begin
-					state <= IDLE;
-				end
-			endcase
-		end
-	end
-
-	//AXI主口组合驱动：请求出现拍即可能握手，valid不依赖对侧ready
-	assign axi_arvalid = ex_valid & ex_mem_req & ex_mem_ren;
-	assign axi_araddr  = ex_mem_addr;
-	assign axi_arprot  = 3'b000;	//数据访问（ARPROT[2]=0，从设备据此走mem_read与数据延迟档）
-	assign axi_awvalid = ex_valid & ex_mem_req & req_wen;
-	assign axi_awaddr  = ex_mem_addr;
-	assign axi_wvalid  = axi_awvalid;
-	//wmask为尺寸编码，wdata低位对齐（LSU转回len写在精确地址）
-	assign axi_wmask   = ex_mem_byte_wen ? 4'b0001 : ex_mem_half_wen ? 4'b0011 : 4'b1111;
-	assign axi_wdata   = ex_mem_byte_wen ? {24'b0, ex_mem_byte_data} :
-	                     ex_mem_half_wen ? {16'b0, ex_mem_half_data} : ex_mem_write_data;
-
-	//读数据接收就绪：读等待拍且WBU可接收完成数据
-	assign axi_rready = (state == READ_WAIT) & mem_done_ready;
-	//B通道补全：写响应接收就绪，与rready对称（写等待拍且WBU可接收）
-	assign axi_bready = (state == WRITE_WAIT) & mem_done_ready;
-
-	assign mem_done_valid = (axi_bvalid & axi_bready) | (axi_rvalid & axi_rready);
-	//EXU释放：请求握手完成（读=AR握手后交由READ_WAIT跟踪，写=AW&W握手即数据收讫）
-	assign mem_ex_ready = ar_handshake | write_handshake;
-
-	//load写回数据格式化：LSU返回地址处整字滑窗，按锁存op取低位做符号/零扩展
-	always @(*) begin
-		case (ex_exu_op)
-			`LB:	mem_done_rdata = {{24{axi_rdata[7]}}, axi_rdata[7:0]};
-			`LBU:	mem_done_rdata = {24'b0, axi_rdata[7:0]};
-			`LH:	mem_done_rdata = {{16{axi_rdata[15]}}, axi_rdata[15:0]};
-			`LHU:	mem_done_rdata = {16'b0, axi_rdata[15:0]};
-			default:mem_done_rdata = axi_rdata;
-		endcase
-	end
-
-endmodule
+//本模块已迁移退役（MEM_REMAKE收官·命名规范化）：
+//①原"AXI4-Lite数据主设备"代码整体迁往 RV32E_LSU.v（module RV32E_MEM→RV32E_LSU，实例名 MEM_CTRL→LSU）；
+//②原RV32E_LSU.v的统一从设备代码迁往 RV32E_AXI_XBAR.v（module RV32E_AXI_DEV）并新增互连fabric；
+//③本文件仅作迁移记录保留，不再被顶层实例化。
+//module RV32E_MEM(
+//	input					clk,
+//	input					rst,
+//	//上游：EXU的EX_reg输出（请求拍有效，握手前保持稳定）
+//	input					ex_valid,
+//	input					ex_mem_req,
+//	input					ex_mem_ren,
+//	input	[`RV32E_WIDTH-1:0]	ex_mem_addr,
+//	input					ex_mem_word_wen,
+//	input					ex_mem_half_wen,
+//	input					ex_mem_byte_wen,
+//	input	[`RV32E_WIDTH-1:0]	ex_mem_write_data,
+//	input	[15:0]			ex_mem_half_data,
+//	input	[7:0]			ex_mem_byte_data,
+//	input	[5:0]			ex_exu_op,
+//	//下游：AXI4-Lite主口（经仲裁器发往LSU）
+//	output	[`RV32E_WIDTH-1:0]	axi_araddr,
+//	output					axi_arvalid,
+//	input					axi_arready,
+//	output	[2:0]			axi_arprot,
+//	input	[`RV32E_WIDTH-1:0]	axi_rdata,
+//	input					axi_rvalid,
+//	output					axi_rready,
+//	input	[1:0]			axi_rresp,
+//	output	[`RV32E_WIDTH-1:0]	axi_awaddr,
+//	output					axi_awvalid,
+//	input					axi_awready,
+//	output	[`RV32E_WIDTH-1:0]	axi_wdata,
+//	output	[3:0]			axi_wmask,
+//	output					axi_wvalid,
+//	input					axi_wready,
+//	input					axi_bvalid,
+//	output					axi_bready,
+//	input	[1:0]			axi_bresp,
+//	output					mem_done_valid,
+//	input					mem_done_ready,
+//	output	reg	[`RV32E_WIDTH-1:0]	mem_done_rdata,
+//	output					mem_ex_ready
+//);
+//
+//	import "DPI-C" function void bus_error(input int unsigned resp);
+//	import "DPI-C" function void bus_timeout(input int unsigned channel);
+//
+//	wire				req_wen = ex_mem_word_wen | ex_mem_half_wen | ex_mem_byte_wen;
+//	wire				ar_handshake = axi_arvalid & axi_arready;
+//	wire				write_handshake = axi_awvalid & axi_awready & axi_wvalid & axi_wready;
+//
+//	reg	[1:0]			state;
+//	localparam IDLE		= 2'd0;
+//	localparam READ_WAIT	= 2'd1;
+//	localparam WRITE_WAIT	= 2'd2;
+//
+//	reg	[31:0]			watchdog_cnt;
+//	localparam			AXI_WATCHDOG_LIMIT = 32'd1000;
+//
+//	（FSM/组合驱动/格式化逻辑与RV32E_LSU.v等价，详见迁移目标文件，此处不再展开注释保留）
+//
+//endmodule

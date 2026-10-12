@@ -1,147 +1,127 @@
 `include "RV32E.vh"
 
-//统一访存从设备（AXI4-Lite，五通道）：IFU(取指)与MEM_CTRL(数据)经仲裁器RV32E_ARB共用本模块。
-//按ARPROT[2]区分访问类型并分派DPI（取指走inst_fetch不进mtrace捕获区，数据走mem_read/mem_write）与延迟档位
-//（取指5-10拍，数据5-25拍）；读写握手拍锁存请求操作数并装载随机延迟，递减到0的下一拍沿执行DPI-C访问并置valid。
-//操作数必须握手拍锁存：经仲裁器后总线地址是组合授权选择，延迟等待期间其他主设备的请求会切换活线地址，
-//到期使用锁存值才正确（直连时代靠EX_reg稳定性成立，经仲裁后不成立）。
+//LSU数据访存单元（AXI4-Lite五通道主设备，实例名LSU，原MEM_CTRL/RV32E_MEM迁移至此）：
+//接收EXU的访存请求，经仲裁器RV32E_ARB发往AXI_XBAR；读数据按op做符号/零扩展格式化后送WBU。
+//IDLE拍组合驱动valid（只依赖请求存在，不依赖对侧ready，AXI合规）；读请求AR握手后进READ_WAIT等rvalid，
+//R握手拍即退休拍；写请求AW&W握手后进WRITE_WAIT，B握手拍即退休拍。R/B握手拍resp非OKAY即bus_error停机；
+//等待拍计数看门狗超阈值bus_timeout停机。操作数不锁存：EX_reg保持至退休是既有契约，组合派生自ex_*信号。
 module RV32E_LSU(
 	input					clk,
 	input					rst,
-	//读地址通道（仲裁器→LSU）
-	input	[`RV32E_WIDTH-1:0]	araddr,
-	input					arvalid,
-	/* verilator lint_off UNUSEDSIGNAL */
-	//ARPROT低两位（特权/安全域）本模型不适用，仅bit2（取指/数据）被使用
-	input	[2:0]			arprot,
-	/* verilator lint_on UNUSEDSIGNAL */
-	output	reg				arready,
-	//读数据通道（LSU→仲裁器）
-	output	reg	[`RV32E_WIDTH-1:0]	rdata,
-	output	reg				rvalid,
-	input					rready,
-	output	[1:0]			rresp,
-	//写地址通道（仲裁器→LSU）
-	input	[`RV32E_WIDTH-1:0]	awaddr,
-	input					awvalid,
-	output	reg				awready,
-	//写数据通道（仲裁器→LSU）
-	input	[`RV32E_WIDTH-1:0]	wdata,
-	input	[3:0]			wmask,
-	input					wvalid,
-	output	reg				wready,
-	//写响应通道（LSU→仲裁器）：AW&W握手后确认写完成
-	output	reg				bvalid,
-	input					bready,
-	output	[1:0]			bresp
+	//上游：EXU的EX_reg输出（请求拍有效，握手前保持稳定）
+	input					ex_valid,
+	input					ex_mem_req,
+	input					ex_mem_ren,
+	input	[`RV32E_WIDTH-1:0]	ex_mem_addr,
+	input					ex_mem_word_wen,
+	input					ex_mem_half_wen,
+	input					ex_mem_byte_wen,
+	input	[`RV32E_WIDTH-1:0]	ex_mem_write_data,
+	input	[15:0]			ex_mem_half_data,
+	input	[7:0]			ex_mem_byte_data,
+	input	[5:0]			ex_exu_op,
+	//下游：AXI4-Lite主口（经仲裁器发往XBAR）
+	output	[`RV32E_WIDTH-1:0]	araddr,
+	output					arvalid,
+	input					arready,
+	output	[2:0]			arprot,		//数据访问（bit2=0）
+	input	[`RV32E_WIDTH-1:0]	rdata,
+	input					rvalid,
+	output					rready,
+	input	[1:0]			rresp,
+	output	[`RV32E_WIDTH-1:0]	awaddr,
+	output					awvalid,
+	input					awready,
+	output	[`RV32E_WIDTH-1:0]	wdata,
+	output	[3:0]			wmask,
+	output					wvalid,
+	input					wready,
+	//写响应通道（XBAR→LSU）
+	input					bvalid,
+	output					bready,
+	input	[1:0]			bresp,
+	//对WBU：访存完成（读=R握手拍，写=B握手拍）
+	output					mem_done_valid,
+	input					mem_done_ready,
+	output	reg	[`RV32E_WIDTH-1:0]	mem_done_rdata,
+	//对EXU：请求握手完成（读=AR握手，写=AW&W握手）
+	output					mem_ex_ready
 );
 
-	import "DPI-C" function int unsigned mem_read(input int unsigned addr, input int len);
-	import "DPI-C" function void mem_write(input int unsigned addr, input int len, input int unsigned data);
-	import "DPI-C" function int unsigned inst_fetch(input int unsigned addr, input int len);
-	import "DPI-C" function byte unsigned random_delay(input int unsigned is_fetch);
+	import "DPI-C" function void bus_error(input int unsigned resp);
+	import "DPI-C" function void bus_timeout(input int unsigned channel);
 
-	//锁存的请求操作数（AR/AW&W握手拍采样，延迟等待期间总线活线可能被其他主设备切换）
-	reg	[`RV32E_WIDTH-1:0]	req_addr;	//请求地址
-	reg				req_isfetch;	//取指访问标志（ARPROT[2]握手拍采样）
-	reg	[`RV32E_WIDTH-1:0]	req_wdata;	//写数据（低位对齐）
-	reg	[3:0]			req_wmask;	//写掩码（尺寸编码0001/0011/1111）
+	//请求与握手信号
+	wire				req_wen = ex_mem_word_wen | ex_mem_half_wen | ex_mem_byte_wen;
+	wire				ar_handshake = arvalid & arready;
+	wire				write_handshake = awvalid & awready & wvalid & wready;
 
-	//锁存写掩码尺寸编码转DPI写长度：0001→1字节 0011→2字节 其余→4字节
-	wire	[31:0]		wmask_to_len = (req_wmask == 4'b0001) ? 32'd1 :
-	                                  (req_wmask == 4'b0011) ? 32'd2 : 32'd4;
+	reg	[1:0]			state;
+	localparam IDLE		= 2'd0;	//空闲：可发起新的访存请求
+	localparam READ_WAIT	= 2'd1;	//读等待：AR已握手，等XBAR返回rvalid
+	localparam WRITE_WAIT	= 2'd2;	//写等待：AW&W已握手，等XBAR返回bvalid
 
-	//响应码恒OKAY：DPI内存模型无错误场景，resp为协议形态完整性预留（主设备检查非OKAY即报错停机）
-	assign rresp = `AXI_RESP_OKAY;
-	assign bresp = `AXI_RESP_OKAY;
-
-	reg	[2:0]			state;
-	localparam IDLE		= 3'd0;	//空闲，可接收读写请求
-	localparam WAIT_R	= 3'd1;	//读延迟等待：随机延迟递减中
-	localparam R_VALID	= 3'd2;	//读数据有效拍，等待上游接收
-	localparam WAIT_B	= 3'd3;	//写延迟等待：随机延迟递减中
-	localparam B_VALID	= 3'd4;	//写响应有效拍，等待上游接收bready
-
-	//随机延迟寄存器（一字节）：读写握手时装载分档随机延迟（取指5-10/数据5-25），逐拍递减到0完成访问
-	reg	[7:0]			delay_cnt;
+	//总线看门狗：等待拍计数，超阈值判定无响应，调DPI报错停机（真实SoC的pbus timeout语义）
+	reg	[31:0]			watchdog_cnt;
+	localparam			AXI_WATCHDOG_LIMIT = 32'd1000;	//等待阈值(拍)：远大于随机延迟上限25，余量留给未来真从设备
 
 	always @(posedge clk) begin
 		if(rst) begin
 			state <= IDLE;
-			arready <= 1;
-			rvalid <= 0;
-			rdata <= 0;
-			awready <= 1;
-			wready <= 1;
-			bvalid <= 0;
-			delay_cnt <= 0;
-			req_addr <= 0;
-			req_isfetch <= 0;
-			req_wdata <= 0;
-			req_wmask <= 0;
+			watchdog_cnt <= 0;
 		end else begin
 			case (state)
 				IDLE: begin
-					//读：AR握手拍锁存操作数并装载分档延迟，转读延迟等待
-					if(arvalid && arready) begin
-						req_addr <= araddr;
-						req_isfetch <= arprot[2];
-						arready <= 0;
-						awready <= 0;	//读进行中阻塞写通道
-						wready <= 0;
-						delay_cnt <= random_delay({31'b0, arprot[2]});
-						state <= WAIT_R;
+					if(ar_handshake) begin
+						state <= READ_WAIT;
 					end
-					//写：AW&W同拍握手拍锁存操作数并装载延迟（写恒为数据访问），转写延迟等待
-					if(awvalid && awready && wvalid && wready) begin
-						req_addr <= awaddr;
-						req_wdata <= wdata;
-						req_wmask <= wmask;
-						arready <= 0;
-						awready <= 0;
-						wready <= 0;
-						delay_cnt <= random_delay(32'd0);
-						state <= WAIT_B;
+					if(write_handshake) begin
+						state <= WRITE_WAIT;
 					end
-				end
-				WAIT_R: begin
-					//延迟递减到0的下一拍沿按访问类型分派DPI读取，随后置rvalid
-					if(delay_cnt == 0) begin
-						rdata <= req_isfetch ? inst_fetch(req_addr, 4) : mem_read(req_addr, 4);
-						rvalid <= 1;
-						state <= R_VALID;
+					//请求已呈现但未被接收（总线不给ready）时计数，超阈值报超时
+					if((arvalid || awvalid) && !ar_handshake && !write_handshake) begin
+						if(watchdog_cnt >= AXI_WATCHDOG_LIMIT - 1) begin
+							bus_timeout(32'd2);
+						end else begin
+							watchdog_cnt <= watchdog_cnt + 1;
+						end
 					end else begin
-						delay_cnt <= delay_cnt - 1;
+						watchdog_cnt <= 0;
 					end
 				end
-				R_VALID: begin
-					//读数据被上游接收后回空闲
+				READ_WAIT: begin
 					if(rvalid && rready) begin
-						rvalid <= 0;
-						arready <= 1;
-						awready <= 1;
-						wready <= 1;
 						state <= IDLE;
-					end
-				end
-				WAIT_B: begin
-					//延迟递减到0的下一拍沿执行写入并置bvalid
-					if(delay_cnt == 0) begin
-						mem_write(req_addr, wmask_to_len, req_wdata);
-						bvalid <= 1;
-						state <= B_VALID;
+						//读响应非OKAY，报错停机（NPC_ABORT）
+						if(rresp != `AXI_RESP_OKAY) begin
+							bus_error({30'b0, rresp});
+						end
+						watchdog_cnt <= 0;
 					end else begin
-						delay_cnt <= delay_cnt - 1;
+						//等rvalid无响应计数，超阈值报超时
+						if(watchdog_cnt >= AXI_WATCHDOG_LIMIT - 1) begin
+							bus_timeout(32'd0);
+						end else begin
+							watchdog_cnt <= watchdog_cnt + 1;
+						end
 					end
 				end
-				B_VALID: begin
-					//写响应被上游接收后回空闲
+				WRITE_WAIT: begin
+					//写响应握手拍即退休拍
 					if(bvalid && bready) begin
-						bvalid <= 0;
-						arready <= 1;
-						awready <= 1;
-						wready <= 1;
 						state <= IDLE;
+						//写响应非OKAY，报错停机（NPC_ABORT）
+						if(bresp != `AXI_RESP_OKAY) begin
+							bus_error({30'b0, bresp});
+						end
+						watchdog_cnt <= 0;
+					end else begin
+						//等bvalid无响应计数，超阈值报超时
+						if(watchdog_cnt >= AXI_WATCHDOG_LIMIT - 1) begin
+							bus_timeout(32'd1);
+						end else begin
+							watchdog_cnt <= watchdog_cnt + 1;
+						end
 					end
 				end
 				default: begin
@@ -149,6 +129,38 @@ module RV32E_LSU(
 				end
 			endcase
 		end
+	end
+
+	//AXI主口组合驱动：请求出现拍即可能握手，valid不依赖对侧ready
+	assign arvalid = ex_valid & ex_mem_req & ex_mem_ren;
+	assign araddr  = ex_mem_addr;
+	assign arprot  = 3'b000;	//数据访问（ARPROT[2]=0，从设备据此走mem_read与数据延迟档）
+	assign awvalid = ex_valid & ex_mem_req & req_wen;
+	assign awaddr  = ex_mem_addr;
+	assign wvalid  = awvalid;
+	//wmask为尺寸编码，wdata低位对齐（从设备转回len写在精确地址）
+	assign wmask   = ex_mem_byte_wen ? 4'b0001 : ex_mem_half_wen ? 4'b0011 : 4'b1111;
+	assign wdata   = ex_mem_byte_wen ? {24'b0, ex_mem_byte_data} :
+	                 ex_mem_half_wen ? {16'b0, ex_mem_half_data} : ex_mem_write_data;
+
+	//读数据接收就绪：读等待拍且WBU可接收完成数据
+	assign rready = (state == READ_WAIT) & mem_done_ready;
+	//写响应接收就绪，与rready对称（写等待拍且WBU可接收）
+	assign bready = (state == WRITE_WAIT) & mem_done_ready;
+
+	assign mem_done_valid = (bvalid & bready) | (rvalid & rready);
+	//EXU释放：请求握手完成（读=AR握手后交由READ_WAIT跟踪，写=AW&W握手即数据收讫）
+	assign mem_ex_ready = ar_handshake | write_handshake;
+
+	//load写回数据格式化：从设备返回地址处整字滑窗，按锁存op取低位做符号/零扩展
+	always @(*) begin
+		case (ex_exu_op)
+			`LB:	mem_done_rdata = {{24{rdata[7]}}, rdata[7:0]};
+			`LBU:	mem_done_rdata = {24'b0, rdata[7:0]};
+			`LH:	mem_done_rdata = {{16{rdata[15]}}, rdata[15:0]};
+			`LHU:	mem_done_rdata = {16'b0, rdata[15:0]};
+			default:mem_done_rdata = rdata;
+		endcase
 	end
 
 endmodule

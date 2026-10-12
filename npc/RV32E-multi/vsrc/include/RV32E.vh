@@ -69,5 +69,14 @@
 `define AXI_RESP_SLVERR	2'b10
 `define AXI_RESP_DECERR	2'b11
 
+//XBAR从设备注册表（RV32E_AXI_XBAR按此译码路由；段重叠时低槽位优先，需人工自检不重叠）
+//新增设备：取消注释对应槽位并在RV32E_AXI_XBAR.v确认该槽位已连线（槽2已预布线，更多槽位按其模式扩展）
+`define XBAR_DEV0_BASE	32'h8000_0000	//槽0：主存（DPI内存模型）
+`define XBAR_DEV0_END	32'h87FF_FFFF
+`define XBAR_DEV1_BASE	32'hA000_0000	//槽1：外设桥（临时宽区间覆盖MMIO寄存器+帧缓冲，后续按设备细分）
+`define XBAR_DEV1_END	32'hB007_52FF
+//`define XBAR_DEV2_BASE	32'h..........	//槽2注册模板：登记后RV32E_AXI_XBAR内该槽位自动生效
+//`define XBAR_DEV2_END	32'h..........
+
 
 

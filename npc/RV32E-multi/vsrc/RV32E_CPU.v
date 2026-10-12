@@ -122,11 +122,11 @@ module RV32E_CPU(
 	//EXU下游就绪：访存看MEM_CTRL请求握手完成，非访存看WBU
 	assign ex_ready_mux     = ex_mem_req ? mem_ex_ready : wbu_ex_ready;
 
-	//RAM观察端口（供csrc踪迹）：请求拍呈现真实访存信号（取自AXI主口）
+	//RAM观察端口（供csrc踪迹）：请求拍呈现真实访存信号（取自LSU主口）
 	assign RAM_ADDR  = ex_mem_addr;
-	assign RAM_REN   = axi_arvalid;
-	assign RAM_WEN   = axi_awvalid;
-	assign RAM_WDATA = axi_wdata;
+	assign RAM_REN   = lsu_arvalid;
+	assign RAM_WEN   = lsu_awvalid;
+	assign RAM_WDATA = lsu_wdata;
 
 
 	//IFU(取指master)↔ARB(仲裁器)的AXI4-Lite只读总线连线
@@ -337,30 +337,32 @@ module RV32E_CPU(
 		.jump_addr_out		(jump_addr),
 		.finish				(finish)
 	);
-	//MEM_CTRL(数据master)↔ARB(仲裁器)的AXI4-Lite总线连线（m1侧，完整五通道）
-	wire					axi_arvalid;
-	wire					axi_arready;
-	wire	[`RV32E_WIDTH-1:0]	axi_araddr;
-	wire	[2:0]			axi_arprot;	//恒3'b000：数据访问
-	wire					axi_rvalid;
-	wire					axi_rready;
-	wire	[`RV32E_WIDTH-1:0]	axi_rdata;
-	wire	[1:0]			axi_rresp;	//读响应码（恒OKAY，非OKAY即bus_error停机）
-	wire					axi_awvalid;
-	wire					axi_awready;
-	wire	[`RV32E_WIDTH-1:0]	axi_awaddr;
-	wire					axi_wvalid;
-	wire					axi_wready;
-	wire	[`RV32E_WIDTH-1:0]	axi_wdata;
-	wire	[3:0]			axi_wmask;	//写掩码：尺寸编码0001/0011/1111
-	//写响应通道（LSU→MEM_CTRL）
-	wire					axi_bvalid;
-	wire					axi_bready;
-	wire	[1:0]			axi_bresp;	//写响应码（恒OKAY）
-	wire					mem_ex_ready;	//MEM_CTRL反馈EXU：请求握手完成
+	//LSU(数据master)↔ARB(仲裁器)的AXI4-Lite总线连线（m1侧，完整五通道）
+	//修改（MEM_REMAKE收官·命名规范化）：原MEM_CTRL实例更名LSU（module RV32E_LSU），axi_*连线随之更名lsu_*
+	wire					lsu_arvalid;
+	wire					lsu_arready;
+	wire	[`RV32E_WIDTH-1:0]	lsu_araddr;
+	wire	[2:0]			lsu_arprot;	//恒3'b000：数据访问
+	wire					lsu_rvalid;
+	wire					lsu_rready;
+	wire	[`RV32E_WIDTH-1:0]	lsu_rdata;
+	wire	[1:0]			lsu_rresp;	//读响应码（非OKAY即bus_error停机；DECERR=未注册地址）
+	wire					lsu_awvalid;
+	wire					lsu_awready;
+	wire	[`RV32E_WIDTH-1:0]	lsu_awaddr;
+	wire					lsu_wvalid;
+	wire					lsu_wready;
+	wire	[`RV32E_WIDTH-1:0]	lsu_wdata;
+	wire	[3:0]			lsu_wmask;	//写掩码：尺寸编码0001/0011/1111
+	//写响应通道（XBAR→LSU）
+	wire					lsu_bvalid;
+	wire					lsu_bready;
+	wire	[1:0]			lsu_bresp;	//写响应码
+	wire					mem_ex_ready;	//LSU反馈EXU：请求握手完成
 
-	//访存控制单元（AXI4-Lite主设备）：EXU访存请求经AXI通道发往LSU，load数据格式化后送WBU
-	RV32E_MEM MEM_CTRL(
+	//LSU数据访存单元（AXI4-Lite五通道主设备，原MEM_CTRL/RV32E_MEM迁移）：
+	//EXU访存请求经仲裁器发往XBAR，load数据格式化后送WBU；resp检查与总线看门狗内建
+	RV32E_LSU LSU(
 		.clk				(clk),
 		.rst				(rst),
 		.ex_valid			(ex_valid),
@@ -374,31 +376,31 @@ module RV32E_CPU(
 		.ex_mem_half_data		(ex_mem_half_data),
 		.ex_mem_byte_data		(ex_mem_byte_data),
 		.ex_exu_op			(ex_exu_op),
-		.axi_araddr			(axi_araddr),
-		.axi_arvalid			(axi_arvalid),
-		.axi_arready			(axi_arready),
-		.axi_arprot			(axi_arprot),
-		.axi_rdata			(axi_rdata),
-		.axi_rvalid			(axi_rvalid),
-		.axi_rready			(axi_rready),
-		.axi_rresp			(axi_rresp),
-		.axi_awaddr			(axi_awaddr),
-		.axi_awvalid			(axi_awvalid),
-		.axi_awready			(axi_awready),
-		.axi_wdata			(axi_wdata),
-		.axi_wmask			(axi_wmask),
-		.axi_wvalid			(axi_wvalid),
-		.axi_wready			(axi_wready),
-		.axi_bvalid			(axi_bvalid),
-		.axi_bready			(axi_bready),
-		.axi_bresp			(axi_bresp),
+		.araddr				(lsu_araddr),
+		.arvalid			(lsu_arvalid),
+		.arready			(lsu_arready),
+		.arprot				(lsu_arprot),
+		.rdata				(lsu_rdata),
+		.rvalid				(lsu_rvalid),
+		.rready				(lsu_rready),
+		.rresp				(lsu_rresp),
+		.awaddr				(lsu_awaddr),
+		.awvalid			(lsu_awvalid),
+		.awready			(lsu_awready),
+		.wdata				(lsu_wdata),
+		.wmask				(lsu_wmask),
+		.wvalid				(lsu_wvalid),
+		.wready				(lsu_wready),
+		.bvalid				(lsu_bvalid),
+		.bready				(lsu_bready),
+		.bresp				(lsu_bresp),
 		.mem_done_valid			(mem_done_valid),
 		.mem_done_ready			(mem_done_ready),
 		.mem_done_rdata			(mem_done_rdata),
 		.mem_ex_ready			(mem_ex_ready)
 	);
 
-	//ARB(仲裁器)↔LSU(统一从设备)的AXI4-Lite总线连线（从设备侧，五通道+arprot）
+	//ARB(仲裁器)↔AXI_XBAR(互连)的AXI4-Lite总线连线（互连主侧，五通道+arprot）
 	wire					s_arvalid;
 	wire					s_arready;
 	wire	[`RV32E_WIDTH-1:0]	s_araddr;
@@ -418,7 +420,7 @@ module RV32E_CPU(
 	wire					s_bready;
 	wire	[1:0]			s_bresp;
 
-	//AXI总线仲裁器：IFU(m0,只读)与MEM_CTRL(m1)经此访问统一从设备LSU
+	//AXI总线仲裁器：IFU(m0,只读)与LSU(m1,数据)经此访问AXI_XBAR（轮询，复位偏IFU）
 	RV32E_ARB ARB(
 		.clk			(clk),
 		.rst			(rst),
@@ -430,24 +432,24 @@ module RV32E_CPU(
 		.m0_rdata		(ifu_rdata),
 		.m0_rvalid		(ifu_rvalid),
 		.m0_rresp		(ifu_rresp),
-		.m1_araddr		(axi_araddr),
-		.m1_arvalid		(axi_arvalid),
-		.m1_arprot		(axi_arprot),
-		.m1_arready		(axi_arready),
-		.m1_rready		(axi_rready),
-		.m1_rdata		(axi_rdata),
-		.m1_rvalid		(axi_rvalid),
-		.m1_rresp		(axi_rresp),
-		.m1_awaddr		(axi_awaddr),
-		.m1_awvalid		(axi_awvalid),
-		.m1_awready		(axi_awready),
-		.m1_wdata		(axi_wdata),
-		.m1_wmask		(axi_wmask),
-		.m1_wvalid		(axi_wvalid),
-		.m1_wready		(axi_wready),
-		.m1_bvalid		(axi_bvalid),
-		.m1_bready		(axi_bready),
-		.m1_bresp		(axi_bresp),
+		.m1_araddr		(lsu_araddr),
+		.m1_arvalid		(lsu_arvalid),
+		.m1_arprot		(lsu_arprot),
+		.m1_arready		(lsu_arready),
+		.m1_rready		(lsu_rready),
+		.m1_rdata		(lsu_rdata),
+		.m1_rvalid		(lsu_rvalid),
+		.m1_rresp		(lsu_rresp),
+		.m1_awaddr		(lsu_awaddr),
+		.m1_awvalid		(lsu_awvalid),
+		.m1_awready		(lsu_awready),
+		.m1_wdata		(lsu_wdata),
+		.m1_wmask		(lsu_wmask),
+		.m1_wvalid		(lsu_wvalid),
+		.m1_wready		(lsu_wready),
+		.m1_bvalid		(lsu_bvalid),
+		.m1_bready		(lsu_bready),
+		.m1_bresp		(lsu_bresp),
 		.s_araddr		(s_araddr),
 		.s_arvalid		(s_arvalid),
 		.s_arprot		(s_arprot),
@@ -468,28 +470,29 @@ module RV32E_CPU(
 		.s_bresp		(s_bresp)
 	);
 
-	//统一访存从设备（AXI4-Lite）：IFU取指与MEM_CTRL数据访问共用，按ARPROT[2]分派DPI与延迟档
-	RV32E_LSU LSU(
+	//AXI总线互连（XBAR，原统一从设备LSU演进）：按.vh注册表译码路由到各设备槽位，未注册地址回DECERR
+	//（内含槽0主存/槽1外设桥两个通用DPI从设备RV32E_AXI_DEV；新增设备=.vh登记+本文件内占用槽位）
+	RV32E_AXI_XBAR AXI_XBAR(
 		.clk			(clk),
 		.rst			(rst),
 		.araddr			(s_araddr),
 		.arvalid		(s_arvalid),
-		.arprot			(s_arprot),
+		.arprot		(s_arprot),
 		.arready		(s_arready),
 		.rdata			(s_rdata),
-		.rvalid			(s_rvalid),
-		.rready			(s_rready),
+		.rvalid		(s_rvalid),
+		.rready		(s_rready),
 		.rresp			(s_rresp),
-		.awaddr			(s_awaddr),
+		.awaddr		(s_awaddr),
 		.awvalid		(s_awvalid),
 		.awready		(s_awready),
 		.wdata			(s_wdata),
 		.wmask			(s_wmask),
-		.wvalid			(s_wvalid),
-		.wready			(s_wready),
-		.bvalid			(s_bvalid),
-		.bready			(s_bready),
-		.bresp			(s_bresp)
+		.wvalid		(s_wvalid),
+		.wready		(s_wready),
+		.bvalid		(s_bvalid),
+		.bready		(s_bready),
+		.bresp		(s_bresp)
 	);
 
 endmodule
