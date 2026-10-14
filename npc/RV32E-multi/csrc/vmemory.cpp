@@ -127,7 +127,17 @@ extern "C" word_t inst_fetch(vaddr_t addr, int len){
     return vmem_read(addr, len);
 }
 
-//随机访存延迟源（LSU经DPI-C调用）：is_fetch非0为取指访问，延迟[5,10]拍；数据访问延迟[5,25]拍
-extern "C" uint8_t random_delay(unsigned int is_fetch){
-	return is_fetch ? rand() % 6 + 5 : rand() % 21 + 5;
+//随机访存延迟源（AXI_DEV经DPI-C调用，延迟参数化）：返回[min,max]闭区间随机延迟（拍）
+//修改（从设备现实化·延迟参数化）：原按is_fetch分档（取指5-10/数据5-25）改为闭区间参数化，档位由RTL实例参数传入
+extern "C" uint8_t random_delay(unsigned int min, unsigned int max){
+	return rand() % (max - min + 1) + min;
+}
+//extern "C" uint8_t random_delay(unsigned int is_fetch){
+//	return is_fetch ? rand() % 6 + 5 : rand() % 21 + 5;
+//}
+
+//UART写钩子（RV32E_UART经DPI-C调用，difftest兼容）：字符输出由RTL侧$write承担，本钩子仅置skip标志，
+//difftest下NEMU跳过该store执行（NEMU侧无0x1000_0000设备注册）；接真SoC时钩子随UART模块一起消失
+extern "C" void uart_write_hook(){
+	IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
 }

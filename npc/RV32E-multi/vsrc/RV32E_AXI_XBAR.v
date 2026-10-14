@@ -1,10 +1,10 @@
 `include "RV32E.vh"
 
-//AXI总线互连（XBAR）：ARB下来的访存请求按RV32E.vh注册表译码，路由到各从设备槽位；
-//未注册地址（译码DEV_NONE）由内建DECERR引擎回错：读接收后次拍rvalid+rdata=0+rresp=DECERR，
-//写AW&W接收后次拍bvalid+bresp=DECERR，零延迟（主设备resp检查链路转红字bus_error停机）。
-//新增设备两步：①.vh登记XBAR_DEVn_BASE/END（槽2已预布线，取消注释即生效；更多槽位按槽2模式扩展）
-//②如需非通用DPI从设备，在本文件内用真外设RTL替换对应槽位的AXI_DEV例化。
+//AXI总线互连（XBAR）：ARB下来的访存请求按RV32E.vh注册表译码，路由到各从设备槽位。
+//修改（从设备现实化）：槽0=SRAM(零延迟)、槽1=UART(纯RTL仿真模型)、槽2=DEFAULT槽(DRAM+MMIO外设，随机延迟)——
+//未命中槽0/槽1的一切地址（含0xA000_0000 MMIO外设区）default路由槽2，经DPI走C++访存链is_io_device分发，
+//MMIO地址合法化（原内建DECERR引擎不可达，保留待删除指令；越界错误改由C++层处理：读返0/写assert）。
+//新增设备两步：①.vh登记XBAR_DEVn_BASE/END（按槽0/1模式扩展）②如需非通用DPI从设备，在本文件内用真外设RTL替换对应槽位例化。
 //路由结构：AR按当拍译码组合路由；R属主r_dev在AR握手拍锁存（总线outstanding=1，忙期无新握手）；
 //AW按awaddr当拍译码，W无地址——AW&W同拍握手拍用当拍译码、其余拍用AW握手拍锁存的aw_dev；B按aw_dev路由。
 //DMA预留：数据面=ARB新增m2主口；控制面=本注册表登记DMA寄存器段（详见MEM_REMAKE.md）。
@@ -32,16 +32,15 @@ module RV32E_AXI_XBAR(
 	output	[1:0]			bresp
 );
 
-	localparam			DEV_NONE = 3'd7;	//未注册地址：内建DECERR响应
+	localparam			DEV_NONE = 3'd7;	//原未注册地址标记：default路由后不可达，DECERR引擎随之退役（保留待删除指令）
 
-	//地址译码：按.vh注册表命中槽位（倒序判低槽位后写=低槽位优先；未定义槽位不参与译码，加设备零改本函数）
+	//地址译码：按.vh注册表命中槽位（倒序判低槽位后写=低槽位优先）；修改（从设备现实化）：default改路由槽2
+	//（DEFAULT槽：DRAM+MMIO外设，未命中SRAM/UART的一切地址走C++访存链），原DEV_NONE注释保留以便回溯
 	function [2:0] addr_decode;
 		input [`RV32E_WIDTH-1:0] addr;
 		begin
-			addr_decode = DEV_NONE;
-`ifdef XBAR_DEV2_BASE
-			if(addr >= `XBAR_DEV2_BASE && addr <= `XBAR_DEV2_END) addr_decode = 3'd2;
-`endif
+			//	addr_decode = DEV_NONE;
+			addr_decode = 3'd2;
 `ifdef XBAR_DEV1_BASE
 			if(addr >= `XBAR_DEV1_BASE && addr <= `XBAR_DEV1_END) addr_decode = 3'd1;
 `endif
@@ -51,23 +50,21 @@ module RV32E_AXI_XBAR(
 		end
 	endfunction
 
-	//槽位设备总线（槽0主存/槽1外设桥；地址类信号广播，就绪类信号按译码路由）
+	//槽位设备总线（槽0 SRAM/槽1 UART/槽2 DRAM(DEFAULT)；地址类信号广播，就绪类信号按译码路由）
 	wire	[`RV32E_WIDTH-1:0]	dev0_rdata, dev1_rdata;
 	wire			dev0_arready, dev0_rvalid, dev0_awready, dev0_wready, dev0_bvalid;
 	wire	[1:0]		dev0_rresp, dev0_bresp;
 	wire			dev1_arready, dev1_rvalid, dev1_awready, dev1_wready, dev1_bvalid;
 	wire	[1:0]		dev1_rresp, dev1_bresp;
-`ifdef XBAR_DEV2_BASE
 	wire	[`RV32E_WIDTH-1:0]	dev2_rdata;
 	wire			dev2_arready, dev2_rvalid, dev2_awready, dev2_wready, dev2_bvalid;
 	wire	[1:0]		dev2_rresp, dev2_bresp;
-`endif
 
-	//AR路由：当拍译码组合选择，未注册由DECERR引擎接收
+	//AR路由：当拍译码组合选择（default槽2常在；DECERR引擎default路由后不可达，逻辑保留待删除指令）
 	wire	[2:0]		ar_dev = addr_decode(araddr);
 
-	reg	[2:0]			r_dev;		//R属主：AR握手拍锁存（含DEV_NONE→DECERR源）
-	reg				decerr_r_pending;	//DECERR读响应在飞行
+	reg	[2:0]			r_dev;		//R属主：AR握手拍锁存
+	reg				decerr_r_pending;	//DECERR读响应在飞行（不可达：ar_dev恒为0/1/2）
 
 	always @(posedge clk) begin
 		if(rst) begin
@@ -85,33 +82,34 @@ module RV32E_AXI_XBAR(
 
 	assign arready	= (ar_dev == 3'd0) ? dev0_arready :
 	                  (ar_dev == 3'd1) ? dev1_arready :
-`ifdef XBAR_DEV2_BASE
+//`ifdef XBAR_DEV2_BASE	//修改（从设备现实化）：槽2转DEFAULT槽无条件例化，条件编译解除
 	                  (ar_dev == 3'd2) ? dev2_arready :
-`endif
+//`endif
 	                  ~decerr_r_pending;
 	assign rvalid	= (r_dev == 3'd0) ? dev0_rvalid :
 	                  (r_dev == 3'd1) ? dev1_rvalid :
-`ifdef XBAR_DEV2_BASE
+//`ifdef XBAR_DEV2_BASE
 	                  (r_dev == 3'd2) ? dev2_rvalid :
-`endif
+//`endif
 	                  decerr_r_pending;
 	assign rdata	= (r_dev == 3'd0) ? dev0_rdata :
 	                  (r_dev == 3'd1) ? dev1_rdata :
-`ifdef XBAR_DEV2_BASE
+//`ifdef XBAR_DEV2_BASE
 	                  (r_dev == 3'd2) ? dev2_rdata :
-`endif
+//`endif
 	                  {`RV32E_WIDTH{1'b0}};
 	assign rresp	= (r_dev == 3'd0) ? dev0_rresp :
 	                  (r_dev == 3'd1) ? dev1_rresp :
-`ifdef XBAR_DEV2_BASE
+//`ifdef XBAR_DEV2_BASE
 	                  (r_dev == 3'd2) ? dev2_rresp :
-`endif
+//`endif
 	                  `AXI_RESP_DECERR;
 
 	//AW/W/B路由：AW按awaddr当拍译码；W无地址，握手拍用当拍译码、其余拍用锁存值；B按锁存值
+	//（DECERR写引擎同AR侧不可达，逻辑保留待删除指令）
 	wire	[2:0]		aw_dev = addr_decode(awaddr);
 	reg	[2:0]			aw_dev_latch;		//AW握手拍锁存（W/B路由用）
-	reg				decerr_b_pending;	//DECERR写响应在飞行
+	reg				decerr_b_pending;	//DECERR写响应在飞行（不可达：aw_dev恒为0/1/2）
 
 	always @(posedge clk) begin
 		if(rst) begin
@@ -131,32 +129,34 @@ module RV32E_AXI_XBAR(
 
 	assign awready	= (aw_dev == 3'd0) ? dev0_awready :
 	                  (aw_dev == 3'd1) ? dev1_awready :
-`ifdef XBAR_DEV2_BASE
+//`ifdef XBAR_DEV2_BASE	//修改（从设备现实化）：槽2转DEFAULT槽无条件例化，条件编译解除
 	                  (aw_dev == 3'd2) ? dev2_awready :
-`endif
+//`endif
 	                  ~decerr_b_pending;
 	assign wready	= (w_route == 3'd0) ? dev0_wready :
 	                  (w_route == 3'd1) ? dev1_wready :
-`ifdef XBAR_DEV2_BASE
+//`ifdef XBAR_DEV2_BASE
 	                  (w_route == 3'd2) ? dev2_wready :
-`endif
+//`endif
 	                  ~decerr_b_pending;
 	assign bvalid	= (aw_dev_latch == 3'd0) ? dev0_bvalid :
 	                  (aw_dev_latch == 3'd1) ? dev1_bvalid :
-`ifdef XBAR_DEV2_BASE
+//`ifdef XBAR_DEV2_BASE
 	                  (aw_dev_latch == 3'd2) ? dev2_bvalid :
-`endif
+//`endif
 	                  decerr_b_pending;
 	assign bresp	= (aw_dev_latch == 3'd0) ? dev0_bresp :
 	                  (aw_dev_latch == 3'd1) ? dev1_bresp :
-`ifdef XBAR_DEV2_BASE
+//`ifdef XBAR_DEV2_BASE
 	                  (aw_dev_latch == 3'd2) ? dev2_bresp :
-`endif
+//`endif
 	                  `AXI_RESP_DECERR;
 
 	//槽位例化：通用DPI从设备（地址/数据/掩码/prot广播，valid按译码门控，ready/valid回路由）
-	//槽0：主存（取指与数据访问，ARPROT[2]分派inst_fetch/mem_read与延迟档）
-	RV32E_AXI_DEV MEM_DEV(
+	//槽0：SRAM（零延迟档：握手次拍即回；取指与数据访问，ARPROT[2]分派inst_fetch/mem_read）——DPI vmem后端
+	//修改（从设备现实化）：原主存MEM_DEV零参例化改SRAM零延迟档参数化例化，原行注释保留以便回溯
+	//	RV32E_AXI_DEV MEM_DEV(
+	RV32E_AXI_DEV #(.DELAY_MIN(8'd0), .DELAY_MAX(8'd0)) SRAM_DEV(
 		.clk			(clk),
 		.rst			(rst),
 		.araddr			(araddr),
@@ -179,8 +179,10 @@ module RV32E_AXI_XBAR(
 		.bresp			(dev0_bresp)
 	);
 
-	//槽1：外设桥（MMIO寄存器+帧缓冲，经DPI走C++设备模型）
-	RV32E_AXI_DEV PERI_DEV(
+	//槽1：UART仿真模型（纯RTL，$write字符输出，零延迟；写=输出低8位、读=返0+OKAY）
+	//修改（从设备现实化）：原槽1外设桥PERI_DEV(AXI_DEV)退役——MMIO改由槽2 DEFAULT经C++访存链is_io_device
+	//分发（serial/rtc/kbd/vgactl/fb原地复活），原例化注释保留以便回溯
+	RV32E_UART UART_DEV(
 		.clk			(clk),
 		.rst			(rst),
 		.araddr			(araddr),
@@ -202,10 +204,36 @@ module RV32E_AXI_XBAR(
 		.bready			(bready && (aw_dev_latch == 3'd1)),
 		.bresp			(dev1_bresp)
 	);
+//	RV32E_AXI_DEV PERI_DEV(
+//		.clk			(clk),
+//		.rst			(rst),
+//		.araddr			(araddr),
+//		.arvalid		(arvalid && (ar_dev == 3'd1)),
+//		.arprot			(arprot),
+//		.arready		(dev1_arready),
+//		.rdata			(dev1_rdata),
+//		.rvalid			(dev1_rvalid),
+//		.rready			(rready && (r_dev == 3'd1)),
+//		.rresp			(dev1_rresp),
+//		.awaddr			(awaddr),
+//		.awvalid		(awvalid && (aw_dev == 3'd1)),
+//		.awready		(dev1_awready),
+//		.wdata			(wdata),
+//		.wmask			(wmask),
+//		.wvalid			(wvalid && (w_route == 3'd1)),
+//		.wready			(dev1_wready),
+//		.bvalid			(dev1_bvalid),
+//		.bready			(bready && (aw_dev_latch == 3'd1)),
+//		.bresp			(dev1_bresp)
+//	);
 
-`ifdef XBAR_DEV2_BASE
+	//槽2：DEFAULT槽=DRAM+MMIO外设（随机延迟档5-25拍，DPI vmem后端→C++访存链is_io_device分发外设）：
+	//未命中槽0/槽1的一切地址（0x8100_0000+真DRAM段、0xA000_0000 MMIO外设区）默认路由至此
+	//修改（从设备现实化）：原预布线休眠槽2（ifdef XBAR_DEV2_BASE门控）转DEFAULT槽无条件例化+随机延迟参数
+//`ifdef XBAR_DEV2_BASE
 	//槽2：休眠预布线（.vh登记XBAR_DEV2_BASE/END后自动生效，设备类型按需替换AXI_DEV）
-	RV32E_AXI_DEV DEV2_DEV(
+//	RV32E_AXI_DEV DEV2_DEV(
+	RV32E_AXI_DEV #(.DELAY_MIN(8'd5), .DELAY_MAX(8'd25)) DRAM_DEV(
 		.clk			(clk),
 		.rst			(rst),
 		.araddr			(araddr),
@@ -227,6 +255,6 @@ module RV32E_AXI_XBAR(
 		.bready			(bready && (aw_dev_latch == 3'd2)),
 		.bresp			(dev2_bresp)
 	);
-`endif
+//`endif
 
 endmodule

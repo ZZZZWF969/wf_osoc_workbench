@@ -70,12 +70,20 @@
 `define AXI_RESP_DECERR	2'b11
 
 //XBAR从设备注册表（RV32E_AXI_XBAR按此译码路由；段重叠时低槽位优先，需人工自检不重叠）
-//新增设备：取消注释对应槽位并在RV32E_AXI_XBAR.v确认该槽位已连线（槽2已预布线，更多槽位按其模式扩展）
-`define XBAR_DEV0_BASE	32'h8000_0000	//槽0：主存（DPI内存模型）
-`define XBAR_DEV0_END	32'h87FF_FFFF
-`define XBAR_DEV1_BASE	32'hA000_0000	//槽1：外设桥（临时宽区间覆盖MMIO寄存器+帧缓冲，后续按设备细分）
-`define XBAR_DEV1_END	32'hB007_52FF
-//`define XBAR_DEV2_BASE	32'h..........	//槽2注册模板：登记后RV32E_AXI_XBAR内该槽位自动生效
+//新增设备：登记对应槽位BASE/END并在RV32E_AXI_XBAR.v确认该槽位已连线（按槽0/1模式扩展）
+//修改（从设备现实化）：原槽0主存宽区间拆为SRAM(槽0)+DRAM(槽2 default)；原槽1外设桥退役——
+//MMIO地址合法化，未命中SRAM/UART的一切地址（含MMIO外设区）default路由槽2走C++访存链；原定义注释保留以便回溯
+`define XBAR_DEV0_BASE	32'h8000_0000	//槽0：SRAM（DPI vmem后端，零延迟：握手次拍即回）
+`define XBAR_DEV0_END	32'h80FF_FFFF
+`define XBAR_DEV1_BASE	32'h1000_0000	//槽1：UART（纯RTL仿真模型，$write字符输出，零延迟）
+`define XBAR_DEV1_END	32'h1000_0FFF
+//槽2：DEFAULT槽（DRAM+MMIO外设，随机延迟5-25拍）——未命中槽0/槽1的一切地址默认路由至此：
+//含0x8100_0000+真DRAM段与0xA000_0000 MMIO外设区（经DPI走C++访存链is_io_device分发），无需登记地址
+//`define XBAR_DEV0_BASE	32'h8000_0000	//原槽0：主存（DPI内存模型）——已拆分为SRAM/DRAM，退役
+//`define XBAR_DEV0_END	32'h87FF_FFFF
+//`define XBAR_DEV1_BASE	32'hA000_0000	//原槽1：外设桥——MMIO改走default槽C++访存链，退役
+//`define XBAR_DEV1_END	32'hB007_52FF
+//`define XBAR_DEV2_BASE	32'h..........	//原槽2注册模板——槽2已转为DEFAULT槽（无条件例化），模板作废
 //`define XBAR_DEV2_END	32'h..........
 
 

@@ -7,7 +7,10 @@
 #define DEVICE_BASE 0xa0000000
 #define MMIO_BASE 0xa0000000
 
-#define SERIAL_PORT     (DEVICE_BASE + 0x00003f8)
+//修改（NPC从设备现实化·临时测试改）：putch改走NPC侧RTL UART仿真模型（0x1000_0000，$write字符输出）
+//本行为临时为测试而改；原serial定义注释保留，回迁或接真SoC时按需恢复
+//#define SERIAL_PORT     (DEVICE_BASE + 0x00003f8)
+#define SERIAL_PORT     0x10000000
 #define RTC_ADDR        (DEVICE_BASE + 0x0000048)
 #define KBD_ADDR		(DEVICE_BASE + 0x0000060)
 #define VGACTL_ADDR     (DEVICE_BASE + 0x0000100)
