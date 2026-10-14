@@ -79,6 +79,9 @@
 `define XBAR_DEV1_END	32'h1000_0FFF
 //槽2：DEFAULT槽（DRAM+MMIO外设，随机延迟5-25拍）——未命中槽0/槽1的一切地址默认路由至此：
 //含0x8100_0000+真DRAM段与0xA000_0000 MMIO外设区（经DPI走C++访存链is_io_device分发），无需登记地址
+//修改（CLINT接入）：登记槽3 CLINT寄存器组（msip/mtimecmp/mtime，纯RTL设备，设备内未命中地址回DECERR）
+`define XBAR_DEV3_BASE	32'h0200_0000	//槽3：CLINT（中断控制器：msip@0x0000/mtimecmp@0x4000/mtime@0xBFF8）
+`define XBAR_DEV3_END	32'h0200_BFFF
 //`define XBAR_DEV0_BASE	32'h8000_0000	//原槽0：主存（DPI内存模型）——已拆分为SRAM/DRAM，退役
 //`define XBAR_DEV0_END	32'h87FF_FFFF
 //`define XBAR_DEV1_BASE	32'hA000_0000	//原槽1：外设桥——MMIO改走default槽C++访存链，退役

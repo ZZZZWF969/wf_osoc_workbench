@@ -266,7 +266,9 @@ module RV32E_CPU(
 		.csr_rrd		(csr_rrd),
 		.pc				(csr_pc_wb),
 		.write_data		(csr_write_data_wb),
-		.read_csr		(csr_rdata)
+		.read_csr		(csr_rdata),
+		.clint_msip		(clint_msip),
+		.clint_mtip		(clint_mtip)
 	);
 
 	RV32E_EXU EXU(
@@ -470,12 +472,16 @@ module RV32E_CPU(
 		.s_bresp		(s_bresp)
 	);
 
+	//CLINT中断挂起标志连线（XBAR→CSR专用，CLINT接入新增）：CLINT的msip/mtip经XBAR端口引出接CSR位标志
+	wire					clint_msip;
+	wire					clint_mtip;
+
 	//AXI总线互连（XBAR，原统一从设备LSU演进）：按.vh注册表译码路由到各设备槽位，未注册地址回DECERR
 	//（内含槽0主存/槽1外设桥两个通用DPI从设备RV32E_AXI_DEV；新增设备=.vh登记+本文件内占用槽位）
 	RV32E_AXI_XBAR AXI_XBAR(
 		.clk			(clk),
 		.rst			(rst),
-		.araddr			(s_araddr),
+		.araddr		(s_araddr),
 		.arvalid		(s_arvalid),
 		.arprot		(s_arprot),
 		.arready		(s_arready),
@@ -492,7 +498,9 @@ module RV32E_CPU(
 		.wready		(s_wready),
 		.bvalid		(s_bvalid),
 		.bready		(s_bready),
-		.bresp		(s_bresp)
+		.bresp			(s_bresp),
+		.clint_msip		(clint_msip),
+		.clint_mtip		(clint_mtip)
 	);
 
 endmodule

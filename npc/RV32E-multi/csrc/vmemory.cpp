@@ -141,3 +141,9 @@ extern "C" uint8_t random_delay(unsigned int min, unsigned int max){
 extern "C" void uart_write_hook(){
 	IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
 }
+
+//CLINT访问钩子（RV32E_CLINT经DPI-C调用，difftest兼容）：CLINT为纯RTL设备不走vmem（NEMU无0x0200_0000注册），
+//读写握手拍置skip标志跳过NEMU对应指令执行，寄存器值以DUT侧RTL为权威
+extern "C" void clint_hook(){
+	IFDEF(CONFIG_NPC_DIFFTEST, difftest_skip_ref();)
+}

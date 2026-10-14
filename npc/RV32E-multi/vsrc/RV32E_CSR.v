@@ -10,7 +10,11 @@ module RV32E_CSR(
 	input	[11:0]	csr_rrd,
 	input	[`RV32E_WIDTH-1:0]	pc,
 	input	[`RV32E_WIDTH-1:0]	write_data,
-	output	[`RV32E_WIDTH-1:0]	read_csr
+	output	[`RV32E_WIDTH-1:0]	read_csr,
+	//CLINT中断挂起标志输入（CLINT接入新增，经XBAR端口/CPU顶层传来）：
+	//msip寄存器bit0与mtime>=mtimecmp比较结果，本阶段仅锁存为MSIP/MTIP位标志，中断响应为下一阶段
+	input			clint_msip,
+	input			clint_mtip
 );
 
 	import "DPI-C" function void halt();
@@ -21,6 +25,22 @@ module RV32E_CSR(
 	reg	[`RV32E_WIDTH-1:0]	mepc;
 	reg	[`RV32E_WIDTH-1:0]	mstatus;
 	reg	[`RV32E_WIDTH-1:0]	mtvec;
+
+	//MSIP/MTIP位标志（CLINT接入新增）：CLINT输出的每拍采样锁存，下一阶段中断响应的数据源
+	/* verilator lint_off UNUSEDSIGNAL */
+	reg				msip_flag;
+	reg				mtip_flag;
+	/* verilator lint_on UNUSEDSIGNAL */
+
+	always @(posedge clk) begin
+		if(rst) begin
+			msip_flag <= 1'b0;
+			mtip_flag <= 1'b0;
+		end else begin
+			msip_flag <= clint_msip;
+			mtip_flag <= clint_mtip;
+		end
+	end
 
 	assign read_csr = csr_rdata;
 

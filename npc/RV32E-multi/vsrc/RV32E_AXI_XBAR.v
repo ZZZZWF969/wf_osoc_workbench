@@ -29,18 +29,25 @@ module RV32E_AXI_XBAR(
 	output					wready,
 	output					bvalid,
 	input					bready,
-	output	[1:0]			bresp
+	output	[1:0]			bresp,
+	//CLINT副作用输出（非总线，CLINT接入新增）：中断挂起标志引出，经CPU顶层接CSR的MSIP/MTIP位
+	output					clint_msip,
+	output					clint_mtip
 );
 
 	localparam			DEV_NONE = 3'd7;	//原未注册地址标记：default路由后不可达，DECERR引擎随之退役（保留待删除指令）
 
 	//地址译码：按.vh注册表命中槽位（倒序判低槽位后写=低槽位优先）；修改（从设备现实化）：default改路由槽2
-	//（DEFAULT槽：DRAM+MMIO外设，未命中SRAM/UART的一切地址走C++访存链），原DEV_NONE注释保留以便回溯
+	//（DEFAULT槽：DRAM+MMIO外设，未命中已登记槽位的一切地址走C++访存链）；修改（CLINT接入）：登记槽3译码分支
+	//（原DEV_NONE注释保留以便回溯）
 	function [2:0] addr_decode;
 		input [`RV32E_WIDTH-1:0] addr;
 		begin
 			//	addr_decode = DEV_NONE;
 			addr_decode = 3'd2;
+`ifdef XBAR_DEV3_BASE
+			if(addr >= `XBAR_DEV3_BASE && addr <= `XBAR_DEV3_END) addr_decode = 3'd3;
+`endif
 `ifdef XBAR_DEV1_BASE
 			if(addr >= `XBAR_DEV1_BASE && addr <= `XBAR_DEV1_END) addr_decode = 3'd1;
 `endif
@@ -59,6 +66,18 @@ module RV32E_AXI_XBAR(
 	wire	[`RV32E_WIDTH-1:0]	dev2_rdata;
 	wire			dev2_arready, dev2_rvalid, dev2_awready, dev2_wready, dev2_bvalid;
 	wire	[1:0]		dev2_rresp, dev2_bresp;
+`ifdef XBAR_DEV3_BASE
+	//槽3：CLINT连线组（含副作用输出线，.vh登记XBAR_DEV3_BASE后生效）
+	wire	[`RV32E_WIDTH-1:0]	dev3_rdata;
+	wire			dev3_arready, dev3_rvalid, dev3_awready, dev3_wready, dev3_bvalid;
+	wire	[1:0]		dev3_rresp, dev3_bresp;
+	wire			dev3_clint_msip, dev3_clint_mtip;
+	assign clint_msip = dev3_clint_msip;
+	assign clint_mtip = dev3_clint_mtip;
+`else
+	assign clint_msip = 1'b0;	//槽3未登记时副作用输出恒0
+	assign clint_mtip = 1'b0;
+`endif
 
 	//AR路由：当拍译码组合选择（default槽2常在；DECERR引擎default路由后不可达，逻辑保留待删除指令）
 	wire	[2:0]		ar_dev = addr_decode(araddr);
@@ -85,24 +104,36 @@ module RV32E_AXI_XBAR(
 //`ifdef XBAR_DEV2_BASE	//修改（从设备现实化）：槽2转DEFAULT槽无条件例化，条件编译解除
 	                  (ar_dev == 3'd2) ? dev2_arready :
 //`endif
+`ifdef XBAR_DEV3_BASE
+	                  (ar_dev == 3'd3) ? dev3_arready :
+`endif
 	                  ~decerr_r_pending;
 	assign rvalid	= (r_dev == 3'd0) ? dev0_rvalid :
 	                  (r_dev == 3'd1) ? dev1_rvalid :
 //`ifdef XBAR_DEV2_BASE
 	                  (r_dev == 3'd2) ? dev2_rvalid :
 //`endif
+`ifdef XBAR_DEV3_BASE
+	                  (r_dev == 3'd3) ? dev3_rvalid :
+`endif
 	                  decerr_r_pending;
 	assign rdata	= (r_dev == 3'd0) ? dev0_rdata :
 	                  (r_dev == 3'd1) ? dev1_rdata :
 //`ifdef XBAR_DEV2_BASE
 	                  (r_dev == 3'd2) ? dev2_rdata :
 //`endif
+`ifdef XBAR_DEV3_BASE
+	                  (r_dev == 3'd3) ? dev3_rdata :
+`endif
 	                  {`RV32E_WIDTH{1'b0}};
 	assign rresp	= (r_dev == 3'd0) ? dev0_rresp :
 	                  (r_dev == 3'd1) ? dev1_rresp :
 //`ifdef XBAR_DEV2_BASE
 	                  (r_dev == 3'd2) ? dev2_rresp :
 //`endif
+`ifdef XBAR_DEV3_BASE
+	                  (r_dev == 3'd3) ? dev3_rresp :
+`endif
 	                  `AXI_RESP_DECERR;
 
 	//AW/W/B路由：AW按awaddr当拍译码；W无地址，握手拍用当拍译码、其余拍用锁存值；B按锁存值
@@ -132,24 +163,36 @@ module RV32E_AXI_XBAR(
 //`ifdef XBAR_DEV2_BASE	//修改（从设备现实化）：槽2转DEFAULT槽无条件例化，条件编译解除
 	                  (aw_dev == 3'd2) ? dev2_awready :
 //`endif
+`ifdef XBAR_DEV3_BASE
+	                  (aw_dev == 3'd3) ? dev3_awready :
+`endif
 	                  ~decerr_b_pending;
 	assign wready	= (w_route == 3'd0) ? dev0_wready :
 	                  (w_route == 3'd1) ? dev1_wready :
 //`ifdef XBAR_DEV2_BASE
 	                  (w_route == 3'd2) ? dev2_wready :
 //`endif
+`ifdef XBAR_DEV3_BASE
+	                  (w_route == 3'd3) ? dev3_wready :
+`endif
 	                  ~decerr_b_pending;
 	assign bvalid	= (aw_dev_latch == 3'd0) ? dev0_bvalid :
 	                  (aw_dev_latch == 3'd1) ? dev1_bvalid :
 //`ifdef XBAR_DEV2_BASE
 	                  (aw_dev_latch == 3'd2) ? dev2_bvalid :
 //`endif
+`ifdef XBAR_DEV3_BASE
+	                  (aw_dev_latch == 3'd3) ? dev3_bvalid :
+`endif
 	                  decerr_b_pending;
 	assign bresp	= (aw_dev_latch == 3'd0) ? dev0_bresp :
 	                  (aw_dev_latch == 3'd1) ? dev1_bresp :
 //`ifdef XBAR_DEV2_BASE
 	                  (aw_dev_latch == 3'd2) ? dev2_bresp :
 //`endif
+`ifdef XBAR_DEV3_BASE
+	                  (aw_dev_latch == 3'd3) ? dev3_bresp :
+`endif
 	                  `AXI_RESP_DECERR;
 
 	//槽位例化：通用DPI从设备（地址/数据/掩码/prot广播，valid按译码门控，ready/valid回路由）
@@ -256,5 +299,34 @@ module RV32E_AXI_XBAR(
 		.bresp			(dev2_bresp)
 	);
 //`endif
+
+`ifdef XBAR_DEV3_BASE
+	//槽3：CLINT中断控制器（msip/mtimecmp/mtime寄存器组，设备内未命中回DECERR，1拍响应）
+	//副作用输出clint_msip/clint_mtip经本模块端口引出（接CPU顶层→CSR的MSIP/MTIP位）
+	RV32E_CLINT CLINT_DEV(
+		.clk			(clk),
+		.rst			(rst),
+		.araddr			(araddr),
+		.arvalid		(arvalid && (ar_dev == 3'd3)),
+		.arprot			(arprot),
+		.arready		(dev3_arready),
+		.rdata			(dev3_rdata),
+		.rvalid			(dev3_rvalid),
+		.rready			(rready && (r_dev == 3'd3)),
+		.rresp			(dev3_rresp),
+		.awaddr			(awaddr),
+		.awvalid		(awvalid && (aw_dev == 3'd3)),
+		.awready		(dev3_awready),
+		.wdata			(wdata),
+		.wmask			(wmask),
+		.wvalid			(wvalid && (w_route == 3'd3)),
+		.wready			(dev3_wready),
+		.bvalid			(dev3_bvalid),
+		.bready			(bready && (aw_dev_latch == 3'd3)),
+		.bresp			(dev3_bresp),
+		.clint_msip		(dev3_clint_msip),
+		.clint_mtip		(dev3_clint_mtip)
+	);
+`endif
 
 endmodule
